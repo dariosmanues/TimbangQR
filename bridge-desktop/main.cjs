@@ -84,6 +84,7 @@ function setupTray() {
 app.whenReady().then(() => {
   if (!safeStorage.isEncryptionAvailable()) dialog.showErrorBox("Keamanan Windows", "Windows encryption tidak tersedia. Bridge tidak dapat menyimpan credential operator.");
   operatorConfig = loadConfig();
+  app.setLoginItemSettings({ openAtLogin: true });
   startAgent();
   setupTray();
   showWindow();
