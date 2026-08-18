@@ -19,7 +19,7 @@
     "serial:agent": "node serial-agent/server.mjs",
     "migrate:sqlite": "tsx scripts/import-sqlite-export.ts",
     "bridge:dev": "electron bridge-desktop/main.cjs",
-    "bridge:build": "electron-builder --win nsis"
+    "bridge:build": "electron-builder --win nsis --publish never"
   },
   "dependencies": {
     "@zxing/browser": "0.1.5",
