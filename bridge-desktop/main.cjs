@@ -41,7 +41,7 @@ function startAgent() {
   if (agent) agent.kill();
   const dataDir = path.join(app.getPath("userData"), "agent-data");
   fs.mkdirSync(dataDir, { recursive: true });
-  agent = fork(path.join(app.getAppPath(), "serial-agent", "server.mjs"), [], {
+  const agentScript = app.isPackaged\n    ? path.join(process.resourcesPath, "app.asar.unpacked", "serial-agent", "server.mjs")\n    : path.join(app.getAppPath(), "serial-agent", "server.mjs");\n  agent = fork(agentScript, [], {
     env: {
       ...process.env,
       SERIAL_AGENT_DATA_DIR: dataDir,
