@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { dbOne, withTransaction } from "@/lib/db";
 import { jakartaIsoNow } from "@/lib/utils";
+import { syncCompletedWeighingToLps } from "@/lib/lps-sync";
 import type { PoolClient } from "pg";
 
 export const runtime = "nodejs";
@@ -119,7 +120,23 @@ export async function POST(request: Request) {
         netto2Kg: netto2,
       })]);
 
-      return { id, ticket, netto2 };
+      return { id, ticket, netto2, weighedAt };
+    });
+
+    const lpsSync = await syncCompletedWeighingToLps({
+      ticketNumber: result.ticket,
+      plateNumber: vehicle.plate_number,
+      lpsName: lps.name,
+      transdepo: process.env.LPS_TRANSDEPO || "HARAPAN_JAYA",
+      weighedAt: result.weighedAt,
+      grossKg: input.grossKg,
+      tareKg: input.tareKg,
+      rafaksiKg: input.rafaksiKg,
+      nettoKg: result.netto2,
+      driverName: input.driverName || undefined,
+      vehicleType: vehicle.vehicle_type,
+      wasteType: vehicle.waste_type,
+      indicatorRaw: input.indicatorRaw || undefined,
     });
 
     return NextResponse.json({
@@ -127,6 +144,7 @@ export async function POST(request: Request) {
       id: result.id,
       ticketNumber: result.ticket,
       netto2Kg: result.netto2,
+      lpsSync,
     }, { status: 201 });
   } catch (error) {
     return NextResponse.json({
