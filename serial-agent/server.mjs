@@ -25,7 +25,7 @@ const agentDirectory = fileURLToPath(new URL(".", import.meta.url));
 loadDotEnv(path.join(agentDirectory, ".env"));
 loadDotEnv(path.join(process.cwd(), ".env"));
 
-const dataDirectory = path.join(agentDirectory, "data");
+const dataDirectory = process.env.SERIAL_AGENT_DATA_DIR || path.join(agentDirectory, "data");
 const configPath = path.join(dataDirectory, "serial-bridge-config.json");
 const queuePath = path.join(dataDirectory, "serial-bridge-queue.json");
 fs.mkdirSync(dataDirectory, { recursive: true });
