@@ -59,12 +59,11 @@
   "build": {
     "appId": "id.timbangqr.bridge",
     "productName": "TimbangQR Bridge",
-    "asar": false,
+    "asar": true,
     "files": [
       "bridge-desktop/**/*",
       "serial-agent/**/*",
-      "package.json",
-      "node_modules/**/*"
+      "package.json"
     ],
     "win": {
       "target": [
@@ -78,6 +77,12 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
-    }
-  }
+    },
+    "asarUnpack": [
+      "serial-agent/**/*",
+      "node_modules/@serialport/**/*"
+    ]
+  },
+  "main": "bridge-desktop/main.cjs",
+  "author": "TimbangQR"
 }
