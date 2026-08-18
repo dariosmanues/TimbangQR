@@ -1,0 +1,17 @@
+node_modules/
+serial-agent/node_modules/
+.next/
+out/
+build/
+.env
+.env.local
+serial-agent/.env
+serial-agent/data/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/sqlite-export.json
+backups/
+*.log
+*.tsbuildinfo
+.DS_Store

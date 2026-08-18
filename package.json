@@ -1,0 +1,55 @@
+{
+  "name": "jembatan-timbang-qr-postgresql",
+  "version": "3.2.0",
+  "private": true,
+  "description": "Sistem jembatan timbang QR dengan PostgreSQL native dan Serial Agent RS232/RS485 tanpa Docker",
+  "scripts": {
+    "dev": "next dev",
+    "dev:web": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "start:local": "node scripts/start-local.mjs",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "db:init": "tsx --env-file=.env scripts/init-db.ts",
+    "db:check": "tsx scripts/check-db.ts",
+    "db:reset": "tsx scripts/reset-db.ts",
+    "import:xlsx": "tsx scripts/import-xlsx.ts",
+    "dev:all": "node scripts/dev.mjs",
+    "serial:agent": "node serial-agent/server.mjs",
+    "migrate:sqlite": "tsx scripts/import-sqlite-export.ts"
+  },
+  "dependencies": {
+    "@zxing/browser": "0.1.5",
+    "bcryptjs": "3.0.2",
+    "exceljs": "4.4.0",
+    "jose": "6.1.0",
+    "lucide-react": "0.468.0",
+    "next": "16.3.0",
+    "pg": "8.16.3",
+    "qrcode": "1.5.4",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "serialport": "^13.0.0",
+    "zod": "4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.0",
+    "@types/pg": "8.15.5",
+    "@types/qrcode": "1.5.5",
+    "@types/react": "19.2.0",
+    "@types/react-dom": "19.2.0",
+    "eslint": "9.38.0",
+    "eslint-config-next": "16.3.0",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22 <27"
+  },
+  "overrides": {
+    "tmp": "0.2.7",
+    "fast-csv": "4.3.6",
+    "uuid": "11.1.1"
+  }
+}

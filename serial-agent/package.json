@@ -1,0 +1,16 @@
+{
+  "name": "timbangqr-serial-agent",
+  "version": "3.1.0",
+  "private": true,
+  "description": "Agen lokal pembaca COM RS232/RS485 untuk TimbangQR PostgreSQL",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "serialport": "13.0.0"
+  },
+  "engines": {
+    "node": ">=22 <27"
+  }
+}

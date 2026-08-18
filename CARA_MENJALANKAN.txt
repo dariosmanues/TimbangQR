@@ -1,0 +1,42 @@
+TIMBANGQR POSTGRESQL v3.1 - TANPA DOCKER
+========================================
+
+APLIKASI INI TIDAK MEMERLUKAN DOCKER ATAU WSL.
+PostgreSQL dipasang langsung sebagai Windows Service.
+
+PERSIAPAN SEKALI SAJA
+1. Pasang Node.js LTS.
+2. Pasang PostgreSQL untuk Windows dan ingat password user "postgres".
+3. Ekstrak aplikasi.
+4. Jalankan SIAPKAN_DATABASE_WINDOWS.bat.
+5. Masukkan password user postgres saat diminta.
+
+MENJALANKAN APLIKASI
+1. Jalankan MULAI_WINDOWS.bat.
+2. Buka http://localhost:3000.
+3. Login awal: admin@lps.local / Admin123!
+4. Atur serial-agent/.env sesuai COM port dan parameter indikator.
+
+CARA MANUAL
+copy .env.example .env
+npm install
+npm run db:init
+npm run dev
+
+Terminal kedua:
+cd serial-agent
+copy .env.example .env
+npm install
+npm start
+
+HOSTINGER VPS TANPA DOCKER
+- Pasang Node.js, PostgreSQL, Nginx, dan PM2 langsung di Ubuntu.
+- Ikuti docs/DEPLOY_HOSTINGER_VPS_TANPA_DOCKER.md.
+
+VALIDASI
+npm run typecheck
+npm run build
+npm run db:check
+npm audit
+
+Jangan menjalankan npm audit fix --force.
