@@ -17,7 +17,9 @@
     "import:xlsx": "tsx scripts/import-xlsx.ts",
     "dev:all": "node scripts/dev.mjs",
     "serial:agent": "node serial-agent/server.mjs",
-    "migrate:sqlite": "tsx scripts/import-sqlite-export.ts"
+    "migrate:sqlite": "tsx scripts/import-sqlite-export.ts",
+    "bridge:dev": "electron bridge-desktop/main.cjs",
+    "bridge:build": "electron-builder --win nsis --publish never"
   },
   "dependencies": {
     "@zxing/browser": "0.1.5",
@@ -42,7 +44,9 @@
     "eslint": "9.38.0",
     "eslint-config-next": "16.3.0",
     "tsx": "4.20.6",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "electron": "^35.0.0",
+    "electron-builder": "^26.0.12"
   },
   "engines": {
     "node": ">=22 <27"
@@ -51,5 +55,34 @@
     "tmp": "0.2.7",
     "fast-csv": "4.3.6",
     "uuid": "11.1.1"
-  }
+  },
+  "build": {
+    "appId": "id.timbangqr.bridge",
+    "productName": "TimbangQR Bridge",
+    "asar": true,
+    "files": [
+      "bridge-desktop/**/*",
+      "serial-agent/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "TimbangQR-Bridge-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "asarUnpack": [
+      "serial-agent/**/*",
+      "node_modules/@serialport/**/*"
+    ]
+  },
+  "main": "bridge-desktop/main.cjs",
+  "author": "TimbangQR"
 }
