@@ -1,0 +1,28 @@
+name: Build TimbangQR Bridge for Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/windows-operator-bridge]
+    paths:
+      - "bridge-desktop/**"
+      - "serial-agent/**"
+      - "package.json"
+      - ".github/workflows/build-windows-bridge.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install
+      - run: npm run bridge:build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TimbangQR-Bridge-Windows
+          path: dist/TimbangQR-Bridge-Setup-*.exe
+          if-no-files-found: error
