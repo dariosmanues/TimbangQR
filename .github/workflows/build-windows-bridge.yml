@@ -3,7 +3,7 @@ name: Build TimbangQR Bridge for Windows
 on:
   workflow_dispatch:
   push:
-    branches: [feat/windows-operator-bridge]
+    branches: [main, feat/windows-operator-bridge]
     paths:
       - "bridge-desktop/**"
       - "serial-agent/**"
@@ -23,6 +23,15 @@ jobs:
       - name: Validate Bridge JavaScript syntax
         run: node --check bridge-desktop/main.cjs
       - run: npm run bridge:build
+      - name: Smoke test packaged Windows Bridge
+        shell: pwsh
+        run: |
+          $app = Join-Path $PWD "dist\win-unpacked\TimbangQR Bridge.exe"
+          if (!(Test-Path $app)) { throw "Executable hasil packaging tidak ditemukan." }
+          $process = Start-Process -FilePath $app -PassThru
+          Start-Sleep -Seconds 8
+          if ($process.HasExited) { throw "TimbangQR Bridge berhenti saat smoke test." }
+          Stop-Process -Id $process.Id -Force
       - uses: actions/upload-artifact@v4
         with:
           name: TimbangQR-Bridge-Windows
