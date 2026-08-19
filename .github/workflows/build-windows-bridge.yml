@@ -20,6 +20,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm install
+      - name: Validate Bridge JavaScript syntax
+        run: node --check bridge-desktop/main.cjs
       - run: npm run bridge:build
       - uses: actions/upload-artifact@v4
         with:
