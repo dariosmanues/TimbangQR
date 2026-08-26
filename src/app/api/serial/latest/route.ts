@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbOne } from "@/lib/db";
+import { isVercelPreview, previewDbOne } from "@/lib/preview-db";
 
 export const runtime = "nodejs";
 
@@ -27,7 +28,7 @@ export async function GET(request: Request) {
   const configuredCode = process.env.SERIAL_DEVICE_ID?.trim();
   const code = requestedCode || configuredCode || "TIMBANG-HJ-SERIAL-01";
 
-  const reading = await dbOne<LatestReading>(`
+  const sql = `
     SELECT
       r.id,
       r.device_id,
@@ -43,7 +44,11 @@ export async function GET(request: Request) {
     WHERE d.device_code = $1
     ORDER BY r.id DESC
     LIMIT 1
-  `, [code]);
+  `;
+
+  const reading = isVercelPreview()
+    ? await previewDbOne<LatestReading>(sql, [code])
+    : await dbOne<LatestReading>(sql, [code]);
 
   const fresh = Boolean(reading && reading.age_seconds <= STALE_AFTER_SECONDS);
 
@@ -52,5 +57,6 @@ export async function GET(request: Request) {
     fresh,
     staleAfterSeconds: STALE_AFTER_SECONDS,
     serverNow: new Date().toISOString(),
+    previewReadOnly: isVercelPreview(),
   });
 }
