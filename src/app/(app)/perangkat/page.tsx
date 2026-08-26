@@ -1,4 +1,5 @@
 import { Cable, ShieldCheck, Usb } from "lucide-react";
+import RemoteSerialStatusPanel from "@/components/RemoteSerialStatusPanel";
 import SerialConnectionPanel from "@/components/SerialConnectionPanel";
 import { getDeviceList } from "@/lib/queries";
 import { formatDateTime, formatNumber } from "@/lib/utils";
@@ -20,20 +21,7 @@ export default async function DevicePage() {
         <span className="badge green"><Usb size={14} /> Tanpa ESP32</span>
       </div>
 
-      {localBridgeMode ? (
-        <SerialConnectionPanel />
-      ) : (
-        <article className="card">
-          <div className="card-body serial-note">
-            <Usb size={25} color="var(--primary)" />
-            <div>
-              <strong>Mode Hostinger / cloud aktif</strong>
-              <div className="muted">Port COM tidak berada di VPS. Jalankan Serial Agent pada komputer operator yang tersambung ke adapter USB–RS232/RS485.</div>
-              <div className="help">Atur COM port dari komputer operator melalui file .env lalu jalankan npm run serial:bridge. Data berat akan dikirim melalui HTTPS ke API aplikasi ini.</div>
-            </div>
-          </div>
-        </article>
-      )}
+      {localBridgeMode ? <SerialConnectionPanel /> : <RemoteSerialStatusPanel />}
 
       <div style={{ height: 18 }} />
       <article className="card">
