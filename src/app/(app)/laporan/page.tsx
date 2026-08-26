@@ -2,6 +2,7 @@ import { Download, FileSpreadsheet } from "lucide-react";
 import { getMonthlyReport } from "@/lib/queries";
 import { formatNumber, monthLabel } from "@/lib/utils";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function ReportPage({

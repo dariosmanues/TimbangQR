@@ -1,6 +1,7 @@
 import { Scale } from "lucide-react";
 import WeighingWorkspace from "@/components/WeighingWorkspace";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function ScanPage({

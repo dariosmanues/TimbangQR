@@ -2,6 +2,8 @@ import { requireUser } from "@/lib/auth";
 import Sidebar from "@/components/Sidebar";
 import AppTopbar from "@/components/AppTopbar";
 
+export const runtime = "nodejs";
+
 export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
 

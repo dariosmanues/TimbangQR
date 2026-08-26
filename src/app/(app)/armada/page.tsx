@@ -4,6 +4,7 @@ import VehicleCreateForm from "@/components/VehicleCreateForm";
 import { getLpsList, listVehicles } from "@/lib/queries";
 import { formatNumber } from "@/lib/utils";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function ArmadaPage({

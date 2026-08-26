@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { QrCode, ShieldCheck, Usb } from "lucide-react";
 import LoginForm from "./LoginForm";
 
+export const runtime = "nodejs";
+
 export default async function LoginPage() {
   const user = await getSession();
   if (user) redirect("/dashboard");

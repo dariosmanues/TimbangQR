@@ -5,6 +5,7 @@ import PrintButton from "@/components/PrintButton";
 import { dbOne } from "@/lib/db";
 import { formatDateTime, formatNumber } from "@/lib/utils";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function TicketPage({ params }: { params: Promise<{ id: string }> }) {

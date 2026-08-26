@@ -3,6 +3,7 @@ import { Filter, Search } from "lucide-react";
 import { getLpsList, listWeighings } from "@/lib/queries";
 import { formatDateTime, formatNumber } from "@/lib/utils";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function TransactionsPage({

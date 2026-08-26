@@ -4,6 +4,7 @@ import KpiCard from "@/components/KpiCard";
 import { getDashboardData } from "@/lib/queries";
 import { formatDateTime, formatKg, formatNumber, monthLabel } from "@/lib/utils";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {

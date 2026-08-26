@@ -3,6 +3,7 @@ import SerialConnectionPanel from "@/components/SerialConnectionPanel";
 import { getDeviceList } from "@/lib/queries";
 import { formatDateTime, formatNumber } from "@/lib/utils";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function DevicePage() {
