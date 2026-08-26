@@ -47,7 +47,13 @@ type SerialLatestPayload = {
   staleAfterSeconds?: number;
 };
 
-export default function WeighingWorkspace({ initialToken = "" }: { initialToken?: string }) {
+export default function WeighingWorkspace({
+  initialToken = "",
+  previewReadOnly = false,
+}: {
+  initialToken?: string;
+  previewReadOnly?: boolean;
+}) {
   const [token, setToken] = useState(initialToken);
   const [payload, setPayload] = useState<VehiclePayload | null>(null);
   const [loadingVehicle, setLoadingVehicle] = useState(false);
@@ -220,6 +226,11 @@ export default function WeighingWorkspace({ initialToken = "" }: { initialToken?
   async function save(event: React.FormEvent) {
     event.preventDefault();
     if (!payload) return;
+    if (previewReadOnly) {
+      setMessage("Vercel Preview bersifat read-only. Penyimpanan transaksi sengaja dinonaktifkan untuk melindungi database operasional.");
+      return;
+    }
+
     setSaving(true);
     setMessage("");
     setResult(null);
@@ -269,6 +280,12 @@ export default function WeighingWorkspace({ initialToken = "" }: { initialToken?
           {payload && <span className="badge green"><CheckCircle2 size={13} /> QR valid</span>}
         </div>
         <div className="card-body">
+          {previewReadOnly && (
+            <p className="error">
+              Preview read-only aktif: data boleh dibaca untuk pengujian, tetapi transaksi tidak dapat disimpan.
+            </p>
+          )}
+
           <div className="weight-display">
             <div>
               <strong>{new Intl.NumberFormat("id-ID").format(latestWeight)}</strong>
@@ -367,8 +384,8 @@ export default function WeighingWorkspace({ initialToken = "" }: { initialToken?
                 <button className="btn btn-secondary" type="button" onClick={() => loadVehicle(token)}>
                   <RefreshCw size={17} /> Muat ulang
                 </button>
-                <button className="btn btn-primary" disabled={saving || !lpsId || calculated.netto2 <= 0} type="submit">
-                  <Save size={17} /> {saving ? "Menyimpan..." : "Simpan transaksi"}
+                <button className="btn btn-primary" disabled={previewReadOnly || saving || !lpsId || calculated.netto2 <= 0} type="submit">
+                  <Save size={17} /> {previewReadOnly ? "Preview read-only" : saving ? "Menyimpan..." : "Simpan transaksi"}
                 </button>
               </div>
             </form>
