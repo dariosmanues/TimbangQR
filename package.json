@@ -1,6 +1,6 @@
 {
   "name": "jembatan-timbang-qr-postgresql",
-  "version": "3.2.0",
+  "version": "3.2.4",
   "private": true,
   "description": "Sistem jembatan timbang QR dengan PostgreSQL native dan Serial Agent RS232/RS485 tanpa Docker",
   "scripts": {
@@ -59,7 +59,7 @@
   "build": {
     "appId": "id.timbangqr.bridge",
     "productName": "TimbangQR Bridge",
-    "asar": true,
+    "asar": false,
     "files": [
       "bridge-desktop/**/*",
       "serial-agent/**/*",
@@ -77,11 +77,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
-    },
-    "asarUnpack": [
-      "serial-agent/**/*",
-      "node_modules/@serialport/**/*"
-    ]
+    }
   },
   "main": "bridge-desktop/main.cjs",
   "author": "TimbangQR"

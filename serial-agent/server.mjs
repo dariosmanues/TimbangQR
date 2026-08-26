@@ -44,7 +44,7 @@ const toBoolean = (value, fallback = false) => {
 const decodeEscapes = (value) => String(value ?? "").replace(/\\r/g, "\r").replace(/\\n/g, "\n").replace(/\\t/g, "\t").replace(/\\0/g, "\0");
 
 const defaultConfig = {
-  path: process.env.SERIAL_PORT || "",
+  path: process.env.SERIAL_PORT || "COM1",
   interfaceType: process.env.SERIAL_INTERFACE || "RS232",
   baudRate: toNumber(process.env.SERIAL_BAUD_RATE, 9600),
   dataBits: toNumber(process.env.SERIAL_DATA_BITS, 8),
@@ -59,7 +59,7 @@ const defaultConfig = {
   unstableRegex: process.env.SERIAL_UNSTABLE_REGEX || "\\b(US|UNST|UNSTABLE)\\b",
   stableSamples: toNumber(process.env.SERIAL_STABLE_SAMPLES, 3),
   stableToleranceKg: toNumber(process.env.SERIAL_STABLE_TOLERANCE_KG, 1),
-  autoConnect: toBoolean(process.env.SERIAL_AUTO_CONNECT, false),
+  autoConnect: toBoolean(process.env.SERIAL_AUTO_CONNECT, true),
 };
 
 function readJson(filePath, fallback) {
@@ -71,6 +71,9 @@ function readJson(filePath, fallback) {
 }
 
 let config = { ...defaultConfig, ...readJson(configPath, {}) };
+// Migrasi aman untuk instalasi lama yang pernah menyimpan path kosong.
+// Port nonkosong yang sudah dipilih operator tetap dipertahankan.
+if (!String(config.path || "").trim()) config.path = "COM1";
 let queue = readJson(queuePath, []);
 if (!Array.isArray(queue)) queue = [];
 
