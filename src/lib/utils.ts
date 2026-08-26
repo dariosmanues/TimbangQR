@@ -1,3 +1,31 @@
+const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+const MONTHS_SHORT_ID = [
+  "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
+  "Jul", "Agu", "Sep", "Okt", "Nov", "Des",
+];
+
+const MONTHS_LONG_ID = [
+  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+  "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+];
+
+function pad2(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+function wibDateParts(date: Date) {
+  const shifted = new Date(date.getTime() + WIB_OFFSET_MS);
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+    hour: shifted.getUTCHours(),
+    minute: shifted.getUTCMinutes(),
+    second: shifted.getUTCSeconds(),
+  };
+}
+
 export function formatKg(value: number | null | undefined) {
   return new Intl.NumberFormat("id-ID").format(Number(value ?? 0)) + " kg";
 }
@@ -12,15 +40,8 @@ export function formatDateTime(value: string | null | undefined) {
   const date = new Date(String(value).trim());
   if (Number.isNaN(date.getTime())) return "-";
 
-  try {
-    return new Intl.DateTimeFormat("id-ID", {
-      dateStyle: "medium",
-      timeStyle: "short",
-      timeZone: "Asia/Jakarta",
-    }).format(date);
-  } catch {
-    return "-";
-  }
+  const parts = wibDateParts(date);
+  return `${parts.day} ${MONTHS_SHORT_ID[parts.month - 1]} ${parts.year}, ${pad2(parts.hour)}.${pad2(parts.minute)}`;
 }
 
 export function normalizePlate(value: string) {
@@ -35,11 +56,10 @@ export function displayPlate(value: string) {
 
 export function monthLabel(month: string) {
   const [year, monthNumber] = month.split("-").map(Number);
-  return new Intl.DateTimeFormat("id-ID", {
-    month: "long",
-    year: "numeric",
-    timeZone: "Asia/Jakarta",
-  }).format(new Date(Date.UTC(year, monthNumber - 1, 1)));
+  if (!Number.isInteger(year) || !Number.isInteger(monthNumber) || monthNumber < 1 || monthNumber > 12) {
+    return month;
+  }
+  return `${MONTHS_LONG_ID[monthNumber - 1]} ${year}`;
 }
 
 export function toInt(value: unknown, fallback = 0) {
@@ -48,17 +68,6 @@ export function toInt(value: unknown, fallback = 0) {
 }
 
 export function jakartaIsoNow(date = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Jakarta",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(date);
-
-  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${value.year}-${value.month}-${value.day}T${value.hour}:${value.minute}:${value.second}+07:00`;
+  const parts = wibDateParts(date);
+  return `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)}T${pad2(parts.hour)}:${pad2(parts.minute)}:${pad2(parts.second)}+07:00`;
 }
