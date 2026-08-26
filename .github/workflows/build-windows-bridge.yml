@@ -29,9 +29,18 @@ jobs:
           $app = Join-Path $PWD "dist\win-unpacked\TimbangQR Bridge.exe"
           if (!(Test-Path $app)) { throw "Executable hasil packaging tidak ditemukan." }
           $process = Start-Process -FilePath $app -PassThru
-          Start-Sleep -Seconds 8
-          if ($process.HasExited) { throw "TimbangQR Bridge berhenti saat smoke test." }
-          Stop-Process -Id $process.Id -Force
+          $headers = @{ "x-bridge-key" = "bridge-admin-key-ganti-sebelum-produksi" }
+          $ready = $false
+          for ($attempt = 0; $attempt -lt 30; $attempt++) {
+            Start-Sleep -Milliseconds 500
+            if ($process.HasExited) { throw "TimbangQR Bridge berhenti saat smoke test." }
+            try {
+              $health = Invoke-RestMethod -Uri "http://127.0.0.1:8787/health" -Headers $headers -TimeoutSec 2
+              if ($health.ok) { $ready = $true; break }
+            } catch {}
+          }
+          if (!$ready) { throw "Serial Agent bawaan tidak aktif pada port 8787." }
+          taskkill /PID $process.Id /T /F
       - uses: actions/upload-artifact@v4
         with:
           name: TimbangQR-Bridge-Windows
