@@ -7,12 +7,20 @@ export function formatNumber(value: number | null | undefined) {
 }
 
 export function formatDateTime(value: string | null | undefined) {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat("id-ID", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Jakarta",
-  }).format(new Date(value));
+  if (!value || !String(value).trim()) return "-";
+
+  const date = new Date(String(value).trim());
+  if (Number.isNaN(date.getTime())) return "-";
+
+  try {
+    return new Intl.DateTimeFormat("id-ID", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "Asia/Jakarta",
+    }).format(date);
+  } catch {
+    return "-";
+  }
 }
 
 export function normalizePlate(value: string) {
