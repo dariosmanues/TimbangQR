@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Cable, CircleStop, PlugZap, RefreshCw, Save, Send, Usb } from "lucide-react";
 
 type PortInfo = {
@@ -51,7 +51,7 @@ type BridgeStatus = {
 };
 
 const defaults: SerialConfig = {
-  path: "",
+  path: "COM1",
   interfaceType: "RS232",
   baudRate: 9600,
   dataBits: 8,
@@ -66,7 +66,7 @@ const defaults: SerialConfig = {
   unstableRegex: "\\b(US|UNST|UNSTABLE)\\b",
   stableSamples: 3,
   stableToleranceKg: 1,
-  autoConnect: false,
+  autoConnect: true,
 };
 
 function dateTime(value?: string | null) {
@@ -77,6 +77,7 @@ function dateTime(value?: string | null) {
 }
 
 export default function SerialConnectionPanel() {
+  const configInitialized = useRef(false);
   const [status, setStatus] = useState<BridgeStatus | null>(null);
   const [config, setConfig] = useState<SerialConfig>(defaults);
   const [ports, setPorts] = useState<PortInfo[]>([]);
@@ -91,7 +92,10 @@ export default function SerialConnectionPanel() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Serial Bridge tidak tersedia.");
       setStatus(data);
-      setConfig((current) => current.path ? current : data.config);
+      if (!configInitialized.current) {
+        setConfig(data.config);
+        configInitialized.current = true;
+      }
       if (!silent) setMessage("");
     } catch (error) {
       setStatus(null);
