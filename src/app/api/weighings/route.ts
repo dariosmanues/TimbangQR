@@ -7,6 +7,8 @@ import { syncCompletedWeighingToLps } from "@/lib/lps-sync";
 import type { PoolClient } from "pg";
 
 export const runtime = "nodejs";
+const SERIAL_STALE_AFTER_SECONDS = 90;
+
 const schema = z.object({
   vehicleId: z.coerce.number().int().positive(),
   lpsId: z.coerce.number().int().positive(),
@@ -32,8 +34,6 @@ async function nextTicket(client: PoolClient) {
     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
   `, [String(next)]);
 
-  // Gunakan helper WIB deterministik agar tidak bergantung pada dukungan IANA
-  // timezone di runtime deployment.
   const year = jakartaIsoNow().slice(2, 4);
   return `INV/${year}/${current}`;
 }
@@ -64,6 +64,36 @@ export async function POST(request: Request) {
 
     if (!vehicle || !lps) {
       return NextResponse.json({ error: "Armada atau LPS tidak ditemukan." }, { status: 404 });
+    }
+
+    if (input.deviceId) {
+      const serialReading = await dbOne<{
+        weight_kg: number;
+        stable: boolean;
+        age_seconds: number;
+      }>(`
+        SELECT
+          weight_kg,
+          stable,
+          GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (NOW() - received_at))))::int AS age_seconds
+        FROM device_readings
+        WHERE device_id = $1
+        ORDER BY id DESC
+        LIMIT 1
+      `, [input.deviceId]);
+
+      if (!serialReading) {
+        return NextResponse.json({ error: "Pembacaan timbangan serial tidak ditemukan. Muat ulang data timbangan atau gunakan input manual." }, { status: 409 });
+      }
+      if (serialReading.age_seconds > SERIAL_STALE_AFTER_SECONDS) {
+        return NextResponse.json({ error: `Pembacaan timbangan sudah kedaluwarsa (${serialReading.age_seconds} detik). Tunggu data live atau gunakan input manual.` }, { status: 409 });
+      }
+      if (!serialReading.stable) {
+        return NextResponse.json({ error: "Pembacaan timbangan belum stabil. Tunggu indikator stabil atau gunakan input manual." }, { status: 409 });
+      }
+      if (serialReading.weight_kg !== input.grossKg) {
+        return NextResponse.json({ error: "Berat indikator sudah berubah. Gunakan pembacaan terbaru sebelum menyimpan transaksi." }, { status: 409 });
+      }
     }
 
     const netto1 = input.grossKg - input.tareKg;

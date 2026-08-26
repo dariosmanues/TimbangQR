@@ -10,6 +10,7 @@ export default async function ScanPage({
   searchParams: Promise<{ token?: string }>;
 }) {
   const params = await searchParams;
+  const previewReadOnly = (process.env.VERCEL_ENV || "").trim().toLowerCase() === "preview";
 
   return (
     <>
@@ -18,9 +19,11 @@ export default async function ScanPage({
           <h1>Scan QR & penimbangan</h1>
           <p>Identifikasi armada, ambil berat indikator, dan hitung netto otomatis.</p>
         </div>
-        <span className="badge green"><Scale size={14} /> Mode operasional</span>
+        <span className={`badge ${previewReadOnly ? "orange" : "green"}`}>
+          <Scale size={14} /> {previewReadOnly ? "Preview read-only" : "Mode operasional"}
+        </span>
       </div>
-      <WeighingWorkspace initialToken={params.token || ""} />
+      <WeighingWorkspace initialToken={params.token || ""} previewReadOnly={previewReadOnly} />
     </>
   );
 }
