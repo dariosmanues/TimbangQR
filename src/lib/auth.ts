@@ -6,7 +6,7 @@ import type { SessionUser } from "./types";
 const COOKIE_NAME = "timbang_session";
 
 function secretKey() {
-  const raw = process.env.JWT_SECRET || "dev-only-change-this-jwt-secret-minimum-32";
+  const raw = (process.env.JWT_SECRET || "dev-only-change-this-jwt-secret-minimum-32").trim();
   return new TextEncoder().encode(raw);
 }
 
@@ -21,7 +21,7 @@ export async function setSession(user: SessionUser) {
   store.set(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.COOKIE_SECURE === "true" || process.env.APP_URL?.startsWith("https://") === true,
+    secure: (process.env.COOKIE_SECURE || "").trim() === "true" || (process.env.APP_URL || "").trim().startsWith("https://") === true,
     path: "/",
     maxAge: 60 * 60 * 12,
   });

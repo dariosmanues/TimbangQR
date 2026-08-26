@@ -27,7 +27,7 @@ function getDatabaseUrl() {
 }
 
 function isSslEnabled() {
-  const value = (process.env.DATABASE_SSL || "false").toLowerCase();
+  const value = (process.env.DATABASE_SSL || "false").trim().toLowerCase();
   return ["1", "true", "yes", "require"].includes(value);
 }
 
@@ -37,7 +37,7 @@ export function getPool() {
   const pool = new Pool({
     connectionString: getDatabaseUrl(),
     ssl: isSslEnabled() ? { rejectUnauthorized: false } : undefined,
-    max: Number(process.env.DATABASE_POOL_MAX || 10),
+    max: Number((process.env.DATABASE_POOL_MAX || "10").trim()),
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
     application_name: "timbangqr-postgresql",

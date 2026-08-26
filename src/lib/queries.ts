@@ -1,7 +1,7 @@
 import { dbOne, dbQuery } from "./db";
 import type { AssignmentRow, VehicleRow, WeighingRow } from "./types";
 
-const appTimeZone = process.env.APP_TIMEZONE || "Asia/Jakarta";
+const appTimeZone = (process.env.APP_TIMEZONE || "Asia/Jakarta").trim();
 
 export async function getDashboardData() {
   const latestMonthRow = await dbOne<{ month: string }>(`
