@@ -1,13 +1,15 @@
 const bridgeBaseUrl = `http://${process.env.SERIAL_BRIDGE_HOST || "127.0.0.1"}:${process.env.SERIAL_BRIDGE_PORT || "8787"}`;
 const bridgeKey = process.env.SERIAL_BRIDGE_ADMIN_KEY || "bridge-admin-key-ganti-sebelum-produksi";
+const bridgeMode = (process.env.SERIAL_BRIDGE_MODE || "").trim().toLowerCase();
+const isRemoteBridge = bridgeMode === "remote" || Boolean((process.env.VERCEL || "").trim());
 
 export async function callSerialBridge(pathname: string, init?: RequestInit) {
-  if (process.env.SERIAL_BRIDGE_MODE === "remote") {
+  if (isRemoteBridge) {
     return {
       ok: false,
       status: 409,
       data: {
-        error: "Aplikasi berjalan dalam mode cloud. Konfigurasi COM dilakukan pada komputer operator, bukan dari VPS.",
+        error: "Aplikasi berjalan dalam mode cloud. Konfigurasi COM dilakukan pada komputer operator, bukan dari Vercel/VPS.",
       },
     };
   }
@@ -35,7 +37,7 @@ export async function callSerialBridge(pathname: string, init?: RequestInit) {
       ok: false,
       status: 503,
       data: {
-        error: "Serial Bridge belum aktif. Jalankan npm run serial:bridge pada komputer operator.",
+        error: "Serial Bridge belum aktif pada komputer operator.",
         detail: error instanceof Error ? error.message : "Tidak dapat menghubungi bridge.",
       },
     };
