@@ -32,10 +32,9 @@ async function nextTicket(client: PoolClient) {
     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
   `, [String(next)]);
 
-  const year = new Date().toLocaleString("en-US", {
-    timeZone: process.env.APP_TIMEZONE || "Asia/Jakarta",
-    year: "2-digit",
-  });
+  // Gunakan helper WIB deterministik agar tidak bergantung pada dukungan IANA
+  // timezone di runtime deployment.
+  const year = jakartaIsoNow().slice(2, 4);
   return `INV/${year}/${current}`;
 }
 
