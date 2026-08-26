@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, RefreshCw, Save, Scale, Truck } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CheckCircle2, RefreshCw, Save, Truck } from "lucide-react";
 import QrScanner from "./QrScanner";
 
 type Assignment = {
@@ -29,6 +29,24 @@ type VehiclePayload = {
   lpsOptions: Array<{ id: number; name: string }>;
 };
 
+type GrossSource = "serial" | "manual" | null;
+
+type SerialReading = {
+  id?: number | string;
+  device_id?: number | string;
+  weight_kg?: number;
+  stable?: boolean;
+  indicator_raw?: string | null;
+  received_at?: string | null;
+  age_seconds?: number;
+};
+
+type SerialLatestPayload = {
+  reading?: SerialReading | null;
+  fresh?: boolean;
+  staleAfterSeconds?: number;
+};
+
 export default function WeighingWorkspace({ initialToken = "" }: { initialToken?: string }) {
   const [token, setToken] = useState(initialToken);
   const [payload, setPayload] = useState<VehiclePayload | null>(null);
@@ -36,16 +54,35 @@ export default function WeighingWorkspace({ initialToken = "" }: { initialToken?
   const [message, setMessage] = useState("");
   const [latestWeight, setLatestWeight] = useState(0);
   const [stable, setStable] = useState(false);
+  const [serialFresh, setSerialFresh] = useState(false);
+  const [serialAgeSeconds, setSerialAgeSeconds] = useState<number | null>(null);
+  const [staleAfterSeconds, setStaleAfterSeconds] = useState(90);
   const [deviceId, setDeviceId] = useState<number | null>(null);
   const [indicatorRaw, setIndicatorRaw] = useState("");
   const [lpsId, setLpsId] = useState("");
   const [driverName, setDriverName] = useState("");
   const [grossKg, setGrossKg] = useState("");
+  const [grossSource, setGrossSource] = useState<GrossSource>(null);
+  const grossSourceRef = useRef<GrossSource>(null);
   const [tareKg, setTareKg] = useState("");
   const [rafaksiKg, setRafaksiKg] = useState("0");
   const [tareSource, setTareSource] = useState("DATABASE");
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ticketNumber: string; netto2Kg: number } | null>(null);
+
+  const setGrossOrigin = useCallback((source: GrossSource) => {
+    grossSourceRef.current = source;
+    setGrossSource(source);
+  }, []);
+
+  const clearSerialGross = useCallback(() => {
+    if (grossSourceRef.current === "serial") {
+      setGrossKg("");
+      setGrossOrigin(null);
+    }
+    setDeviceId(null);
+    setIndicatorRaw("");
+  }, [setGrossOrigin]);
 
   const loadVehicle = useCallback(async (nextToken: string) => {
     if (!nextToken) return;
@@ -81,33 +118,71 @@ export default function WeighingWorkspace({ initialToken = "" }: { initialToken?
 
   useEffect(() => {
     let cancelled = false;
+
     async function poll() {
       try {
         const response = await fetch("/api/serial/latest", { cache: "no-store" });
-        if (!response.ok) return;
-        const data = await response.json();
-        if (!cancelled && data.reading) {
-          const w = Number(data.reading.weight_kg || 0);
-          const s = Boolean(data.reading.stable);
-          setLatestWeight(w);
-          setStable(s);
-          setDeviceId(Number(data.reading.device_id));
-          setIndicatorRaw(data.reading.indicator_raw || "");
-          if (w > 0 && s) {
-            setGrossKg(String(w));
+        if (!response.ok) {
+          if (!cancelled) {
+            setSerialFresh(false);
+            setStable(false);
+            clearSerialGross();
           }
+          return;
+        }
+
+        const data = await response.json() as SerialLatestPayload;
+        if (cancelled) return;
+
+        if (Number.isFinite(Number(data.staleAfterSeconds))) {
+          setStaleAfterSeconds(Number(data.staleAfterSeconds));
+        }
+
+        const reading = data.reading;
+        if (!reading) {
+          setSerialFresh(false);
+          setSerialAgeSeconds(null);
+          setStable(false);
+          clearSerialGross();
+          return;
+        }
+
+        const w = Number(reading.weight_kg || 0);
+        const isFresh = Boolean(data.fresh);
+        const isStable = isFresh && Boolean(reading.stable);
+        const ageSeconds = Number(reading.age_seconds);
+
+        setLatestWeight(w);
+        setSerialFresh(isFresh);
+        setSerialAgeSeconds(Number.isFinite(ageSeconds) ? ageSeconds : null);
+        setStable(isStable);
+
+        if (isFresh && isStable && w > 0) {
+          if (grossSourceRef.current !== "manual") {
+            setGrossKg(String(w));
+            setGrossOrigin("serial");
+            setDeviceId(Number(reading.device_id));
+            setIndicatorRaw(reading.indicator_raw || "");
+          }
+        } else {
+          clearSerialGross();
         }
       } catch {
-        // Polling tetap dilanjutkan; input manual masih dapat dipakai.
+        if (!cancelled) {
+          setSerialFresh(false);
+          setStable(false);
+          clearSerialGross();
+        }
       }
     }
-    poll();
-    const interval = window.setInterval(poll, 1500);
+
+    void poll();
+    const interval = window.setInterval(() => void poll(), 1500);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, []);
+  }, [clearSerialGross, setGrossOrigin]);
 
   const calculated = useMemo(() => {
     const gross = Number(grossKg || 0);
@@ -135,6 +210,13 @@ export default function WeighingWorkspace({ initialToken = "" }: { initialToken?
     }
   }
 
+  function changeGross(value: string) {
+    setGrossKg(value);
+    setGrossOrigin(value ? "manual" : null);
+    setDeviceId(null);
+    setIndicatorRaw("");
+  }
+
   async function save(event: React.FormEvent) {
     event.preventDefault();
     if (!payload) return;
@@ -154,8 +236,8 @@ export default function WeighingWorkspace({ initialToken = "" }: { initialToken?
           tareKg: Number(tareKg),
           rafaksiKg: Number(rafaksiKg),
           tareSource,
-          deviceId,
-          indicatorRaw,
+          deviceId: grossSource === "serial" ? deviceId : null,
+          indicatorRaw: grossSource === "serial" ? indicatorRaw : "",
         }),
       });
       const data = await response.json();
@@ -163,6 +245,9 @@ export default function WeighingWorkspace({ initialToken = "" }: { initialToken?
       setResult({ ticketNumber: data.ticketNumber, netto2Kg: data.netto2Kg });
       setMessage("Transaksi berhasil disimpan.");
       setGrossKg("");
+      setGrossOrigin(null);
+      setDeviceId(null);
+      setIndicatorRaw("");
       setRafaksiKg("0");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Transaksi gagal disimpan");
@@ -179,7 +264,7 @@ export default function WeighingWorkspace({ initialToken = "" }: { initialToken?
         <div className="card-head">
           <div>
             <h2>2. Data dan berat armada</h2>
-            <p>Nilai stabil dari indikator RS232/RS485 akan mengisi gross secara otomatis.</p>
+            <p>Gross otomatis hanya memakai pembacaan indikator yang stabil dan masih fresh di server.</p>
           </div>
           {payload && <span className="badge green"><CheckCircle2 size={13} /> QR valid</span>}
         </div>
@@ -187,9 +272,22 @@ export default function WeighingWorkspace({ initialToken = "" }: { initialToken?
           <div className="weight-display">
             <div>
               <strong>{new Intl.NumberFormat("id-ID").format(latestWeight)}</strong>
-              <span>{stable ? "BERAT STABIL · KG" : "MENUNGGU BERAT STABIL · KG"}</span>
+              <span>
+                {stable
+                  ? "BERAT STABIL · LIVE · KG"
+                  : serialFresh
+                    ? "BERAT BELUM STABIL · LIVE · KG"
+                    : latestWeight > 0
+                      ? "DATA SERIAL TERAKHIR · OFFLINE · KG"
+                      : "MENUNGGU DATA TIMBANGAN · KG"}
+              </span>
             </div>
           </div>
+          {!serialFresh && latestWeight > 0 && (
+            <p className="error">
+              Data serial tidak fresh{serialAgeSeconds == null ? "" : ` (${serialAgeSeconds} detik)`}. Batas online {staleAfterSeconds} detik; gross otomatis tidak digunakan.
+            </p>
+          )}
 
           <div style={{ height: 16 }} />
 
@@ -224,8 +322,14 @@ export default function WeighingWorkspace({ initialToken = "" }: { initialToken?
                 </div>
                 <div className="field">
                   <label>Gross (kg)</label>
-                  <input className="input" type="number" min="1" value={grossKg} onChange={(e) => setGrossKg(e.target.value)} required />
-                  <span className="help">Otomatis dari pembacaan stabil atau isi manual saat uji coba.</span>
+                  <input className="input" type="number" min="1" value={grossKg} onChange={(e) => changeGross(e.target.value)} required />
+                  <span className="help">
+                    {grossSource === "serial"
+                      ? "Otomatis dari pembacaan serial stabil yang masih fresh."
+                      : grossSource === "manual"
+                        ? "Mode manual. Kosongkan field untuk kembali menerima gross otomatis."
+                        : "Menunggu pembacaan serial stabil atau isi manual saat diperlukan."}
+                  </span>
                 </div>
                 <div className="field">
                   <label>Sumber tare</label>
