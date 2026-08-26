@@ -9,7 +9,9 @@ export const dynamic = "force-dynamic";
 
 export default async function DevicePage() {
   const devices = (await getDeviceList()).filter((device) => String(device.protocol || "") === "DIRECT_SERIAL");
-  const localBridgeMode = process.env.SERIAL_BRIDGE_MODE !== "remote";
+  const bridgeMode = (process.env.SERIAL_BRIDGE_MODE || "").trim().toLowerCase();
+  const isVercel = Boolean((process.env.VERCEL || "").trim());
+  const localBridgeMode = !isVercel && bridgeMode !== "remote";
 
   return (
     <>
