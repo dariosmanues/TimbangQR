@@ -1,6 +1,6 @@
 {
   "name": "jembatan-timbang-qr-postgresql",
-  "version": "3.2.1",
+  "version": "3.2.2",
   "private": true,
   "description": "Sistem jembatan timbang QR dengan PostgreSQL native dan Serial Agent RS232/RS485 tanpa Docker",
   "scripts": {
