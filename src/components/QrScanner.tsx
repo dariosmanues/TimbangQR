@@ -91,7 +91,7 @@ export default function QrScanner({ onToken }: { onToken: (token: string) => voi
       const scanFrame = async () => {
         if (stoppedRef.current || foundRef.current) return;
 
-        if (!detectingRef.current && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        if (!detectingRef.current && video.readyState >= 2) {
           detectingRef.current = true;
           try {
             const barcodes = await detector.detect(video);
