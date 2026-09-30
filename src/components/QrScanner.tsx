@@ -37,7 +37,7 @@ export default function QrScanner({ onToken }: { onToken: (token: string) => voi
 
     try {
       const { BrowserQRCodeReader } = await zxingModulePromise;
-      const reader = new BrowserQRCodeReader();
+      const reader = new BrowserQRCodeReader(undefined, {\n        delayBetweenScanAttempts: 100,\n        delayBetweenScanSuccess: 250,\n      });
 
       const constraints: MediaStreamConstraints = {
         audio: false,
