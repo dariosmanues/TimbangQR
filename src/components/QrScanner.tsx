@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Camera, Keyboard, ScanLine } from "lucide-react";
 
+const zxingModulePromise = import("@zxing/browser");
+
 function tokenFromValue(value: string) {
   const trimmed = value.trim();
   try {
@@ -16,36 +18,64 @@ function tokenFromValue(value: string) {
 export default function QrScanner({ onToken }: { onToken: (token: string) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<{ stop: () => void } | null>(null);
+  const processingRef = useRef(false);
   const [message, setMessage] = useState("Tekan aktifkan kamera untuk memindai QR.");
   const [manual, setManual] = useState("");
   const [active, setActive] = useState(false);
 
-  useEffect(() => () => controlsRef.current?.stop(), []);
+  useEffect(() => {
+    void zxingModulePromise;
+    return () => controlsRef.current?.stop();
+  }, []);
 
   async function start() {
+    if (active) return;
+
     setMessage("Meminta izin kamera...");
     setActive(true);
+    processingRef.current = false;
+
     try {
-      const { BrowserQRCodeReader } = await import("@zxing/browser");
+      const { BrowserQRCodeReader } = await zxingModulePromise;
       const reader = new BrowserQRCodeReader();
-      controlsRef.current = await reader.decodeFromVideoDevice(
-        undefined,
+
+      const constraints: MediaStreamConstraints = {
+        audio: false,
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      };
+
+      controlsRef.current = await reader.decodeFromConstraints(
+        constraints,
         videoRef.current!,
         (result, error, controls) => {
           controlsRef.current = controls;
-          if (result) {
+
+          if (result && !processingRef.current) {
+            processingRef.current = true;
             const token = tokenFromValue(result.getText());
             setMessage("QR terbaca. Memuat data armada...");
             controls.stop();
+            controlsRef.current = null;
             setActive(false);
             onToken(token);
-          } else if (error && error.name !== "NotFoundException") {
+            return;
+          }
+
+          if (error && error.name !== "NotFoundException") {
             setMessage("Kamera aktif. Arahkan QR ke dalam kotak.");
           }
         }
       );
+
       setMessage("Kamera aktif. Arahkan QR ke dalam kotak.");
     } catch (error) {
+      controlsRef.current?.stop();
+      controlsRef.current = null;
+      processingRef.current = false;
       setActive(false);
       setMessage(error instanceof Error ? error.message : "Kamera tidak dapat diaktifkan.");
     }
@@ -54,6 +84,7 @@ export default function QrScanner({ onToken }: { onToken: (token: string) => voi
   function stop() {
     controlsRef.current?.stop();
     controlsRef.current = null;
+    processingRef.current = false;
     setActive(false);
     setMessage("Kamera dihentikan.");
   }
