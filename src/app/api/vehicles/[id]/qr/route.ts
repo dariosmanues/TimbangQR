@@ -5,7 +5,7 @@ import { getSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getSession();
   if (!user) return new NextResponse("Unauthorized", { status: 401 });
 
@@ -17,19 +17,22 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
   if (!vehicle) return new NextResponse("Armada tidak ditemukan", { status: 404 });
 
-  const appUrl = process.env.APP_URL || new URL(request.url).origin;
-  const target = `${appUrl}/scan?token=${vehicle.qr_token}`;
-  const svg = await QRCode.toString(target, {
+  // Scanner hanya membutuhkan token. Menyimpan URL Vercel penuh di QR membuat
+  // modul QR jauh lebih padat dan lebih lambat dibaca kamera, terutama dari layar HP.
+  // Token 32 karakter menghasilkan QR yang jauh lebih sederhana dan cepat dipindai.
+  const payload = vehicle.qr_token.trim();
+
+  const svg = await QRCode.toString(payload, {
     type: "svg",
-    errorCorrectionLevel: "H",
-    margin: 2,
+    errorCorrectionLevel: "M",
+    margin: 4,
     width: 640,
   });
 
   return new NextResponse(svg, {
     headers: {
       "content-type": "image/svg+xml; charset=utf-8",
-      "cache-control": "private, max-age=3600",
+      "cache-control": "private, no-store, max-age=0",
     },
   });
 }
