@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Camera, Keyboard, ScanLine } from "lucide-react";
 
-const zxingModulePromise = import("@zxing/browser");
 
 function tokenFromValue(value: string) {
   const trimmed = value.trim();
@@ -23,10 +22,7 @@ export default function QrScanner({ onToken }: { onToken: (token: string) => voi
   const [manual, setManual] = useState("");
   const [active, setActive] = useState(false);
 
-  useEffect(() => {
-    void zxingModulePromise;
-    return () => controlsRef.current?.stop();
-  }, []);
+  useEffect(() => () => controlsRef.current?.stop(), []);
 
   async function start() {
     if (active) return;
@@ -36,7 +32,7 @@ export default function QrScanner({ onToken }: { onToken: (token: string) => voi
     processingRef.current = false;
 
     try {
-      const { BrowserQRCodeReader } = await zxingModulePromise;
+      const { BrowserQRCodeReader } = await import("@zxing/browser");
       const reader = new BrowserQRCodeReader(undefined, {\n        delayBetweenScanAttempts: 100,\n        delayBetweenScanSuccess: 250,\n      });
 
       const constraints: MediaStreamConstraints = {
