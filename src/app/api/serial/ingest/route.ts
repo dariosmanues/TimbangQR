@@ -80,7 +80,10 @@ export async function POST(request: Request) {
 
       await client.query(`
         UPDATE weighbridge_devices
-        SET last_seen_at = $1::timestamptz,
+        SET last_seen_at = GREATEST(
+              COALESCE(last_seen_at, $1::timestamptz),
+              $1::timestamptz
+            ),
             firmware_version = 'PC-SERIAL-BRIDGE',
             port_name = COALESCE($2, port_name),
             connection_type = COALESCE($3, connection_type)
