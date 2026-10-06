@@ -4,6 +4,10 @@ import { dbOne } from "@/lib/db";
 import type { DeviceReading } from "@/lib/types";
 
 export const runtime = "nodejs";
+// A queued reading can arrive at Vercel after a newer live reading. The
+// status panel must show the newest measurement time, not the last row inserted.
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
   const user = await getSession();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -15,9 +19,12 @@ export async function GET(request: Request) {
     FROM device_readings r
     JOIN weighbridge_devices d ON d.id = r.device_id
     WHERE d.device_code = $1
-    ORDER BY r.id DESC
+    ORDER BY r.recorded_at DESC, r.id DESC
     LIMIT 1
   `, [code]);
 
-  return NextResponse.json({ reading });
+  return NextResponse.json(
+    { reading },
+    { headers: { "Cache-Control": "no-store, max-age=0" } }
+  );
 }
