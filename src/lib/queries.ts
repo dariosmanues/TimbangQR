@@ -179,7 +179,7 @@ export async function getDeviceList() {
       SELECT r.weight_kg, r.stable, r.recorded_at
       FROM device_readings r
       WHERE r.device_id = d.id
-      ORDER BY r.id DESC
+      ORDER BY r.recorded_at DESC, r.id DESC
       LIMIT 1
     ) latest ON TRUE
     ORDER BY d.device_code
