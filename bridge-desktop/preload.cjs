@@ -6,4 +6,6 @@ contextBridge.exposeInMainWorld("bridge", {
   ports: () => ipcRenderer.invoke("bridge:ports"),
   connect: (serial) => ipcRenderer.invoke("bridge:connect", serial),
   disconnect: () => ipcRenderer.invoke("bridge:disconnect"),
+  clearQueue: () => ipcRenderer.invoke("bridge:clear-queue"),
+  testIngest: () => ipcRenderer.invoke("bridge:test-ingest"),
 });

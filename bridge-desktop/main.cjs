@@ -10,8 +10,24 @@ let agentLogPath = "";
 let agentStartError = "";
 let operatorConfig = {};
 const bridgeUrl = "http://127.0.0.1:8787";
-const defaultIngestUrl = "http://127.0.0.1:3000/api/serial/ingest";
+const defaultIngestUrl = "https://timbangqr-harapan-jaya.vercel.app/api/serial/ingest";
 const defaultBridgeAdminKey = "bridge-admin-key-ganti-sebelum-produksi";
+
+function normalizeIngestUrl(raw) {
+  let url = String(raw || "").trim();
+  const mdMatch = url.match(/\[([^\]]+)\]\(([^)]+)\)/);
+  if (mdMatch) {
+    url = mdMatch[2].trim();
+  } else {
+    url = url.replace(/^[<[(]+|[>\])]+$/g, "").trim();
+  }
+  url = url.replace(/\/+$/, "");
+  if (!url) return "";
+  if (!url.endsWith("/api/serial/ingest")) {
+    url += "/api/serial/ingest";
+  }
+  return url;
+}
 
 function configPath() { return path.join(app.getPath("userData"), "operator-settings.json"); }
 function loadConfig() {
@@ -26,6 +42,9 @@ function loadConfig() {
 }
 function saveConfig(next) {
   const definedValues = Object.fromEntries(Object.entries(next).filter(([, value]) => value !== undefined));
+  if (definedValues.ingestUrl) {
+    definedValues.ingestUrl = normalizeIngestUrl(definedValues.ingestUrl);
+  }
   operatorConfig = { ...operatorConfig, ...definedValues };
   const stored = { ...operatorConfig };
   for (const key of ["serialApiKey", "bridgeAdminKey"]) {
@@ -82,7 +101,7 @@ async function startAgent() {
         SERIAL_AGENT_DATA_DIR: dataDir,
         SERIAL_BRIDGE_HOST: "127.0.0.1",
         SERIAL_BRIDGE_PORT: "8787",
-        SERIAL_INGEST_URL: operatorConfig.ingestUrl || defaultIngestUrl,
+        SERIAL_INGEST_URL: normalizeIngestUrl(operatorConfig.ingestUrl || defaultIngestUrl),
         SERIAL_API_KEY: operatorConfig.serialApiKey || "",
         SERIAL_DEVICE_ID: operatorConfig.deviceId || "TIMBANG-HJ-SERIAL-01",
         SERIAL_BRIDGE_ADMIN_KEY: operatorConfig.bridgeAdminKey || defaultBridgeAdminKey,
@@ -186,3 +205,9 @@ ipcMain.handle("bridge:connect", async (_event, serial) => {
   return request("/connect", { method: "POST" });
 });
 ipcMain.handle("bridge:disconnect", () => request("/disconnect", { method: "POST" }));
+ipcMain.handle("bridge:clear-queue", async () => {
+  return request("/queue/clear", { method: "POST" });
+});
+ipcMain.handle("bridge:test-ingest", async () => {
+  return request("/test-ingest", { method: "POST" });
+});
