@@ -99,8 +99,10 @@ export async function POST(request: Request) {
         active: boolean;
         nomor_izin: string | null;
         qr_token: string;
+        nama_lps: string | null;
+        kelurahan_lps: string | null;
       }>(
-        `SELECT id, code, plate_number, plate_normalized, active, nomor_izin, qr_token
+        `SELECT id, code, plate_number, plate_normalized, active, nomor_izin, qr_token, nama_lps, kelurahan_lps
          FROM vehicles
          WHERE plate_normalized = ANY($1::text[])
             OR (nomor_izin IS NOT NULL AND nomor_izin = ANY($2::text[]))`,
@@ -178,11 +180,29 @@ export async function POST(request: Request) {
         const tglSk = formatDateString(item.tanggalSkLps);
         const tglIzin = formatDateString(item.tanggalTerbitIzin);
 
-        // Cari record yang cocok di cache map
-        const vehicleRow =
-          (item.noIzinOperasi ? vehicleByIzin.get(item.noIzinOperasi) : null) ||
-          vehicleByPlate.get(plateNormalized) ||
-          null;
+        // Cari record yang cocok di cache map:
+        // 1. Nomor izin
+        // 2. Jika nomor plat dipakai oleh multi-LPS (misal BM 9601 TZ di LPS Pesisir & LPS Rintis), cocokkan nama LPS / kelurahan
+        // 3. Fallback ke nomor plat
+        let vehicleRow = item.noIzinOperasi ? vehicleByIzin.get(item.noIzinOperasi) : null;
+        if (!vehicleRow && (item.namaLps || kelurahanNama)) {
+          const cleanItemLps = (item.namaLps || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+          const cleanItemKel = (kelurahanNama || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+          const matchingByPlate = existingVehicles.rows.filter((r) => r.plate_normalized === plateNormalized);
+          if (matchingByPlate.length > 0) {
+            vehicleRow = matchingByPlate.find((r) => {
+              const rLps = (r.nama_lps || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+              const rKel = (r.kelurahan_lps || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+              return (
+                (cleanItemLps && (cleanItemLps.includes(rLps) || rLps.includes(cleanItemLps))) ||
+                (cleanItemKel && (cleanItemKel.includes(rKel) || rKel.includes(cleanItemKel)))
+              );
+            }) || null;
+          }
+        }
+        if (!vehicleRow) {
+          vehicleRow = vehicleByPlate.get(plateNormalized) || null;
+        }
 
         if (isHarapanJaya) {
           let vehicleId: number;
