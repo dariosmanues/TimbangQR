@@ -1,9 +1,10 @@
 import { dbOne, dbQuery } from "./db";
+import { unstable_cache } from "next/cache";
 import type { AssignmentRow, VehicleRow, WeighingRow } from "./types";
 
 const appTimeZone = (process.env.APP_TIMEZONE || "Asia/Jakarta").trim();
 
-export async function getDashboardData() {
+async function getDashboardDataUncached() {
   const latestMonthRow = await dbOne<{ month: string }>(`
     SELECT COALESCE(
       MAX(to_char(timezone($1, weighed_at), 'YYYY-MM')),
@@ -91,12 +92,22 @@ export async function getDashboardData() {
   };
 }
 
-export async function listVehicles(search = "") {
+const getDashboardDataCached = unstable_cache(
+  getDashboardDataUncached,
+  ["timbangqr-dashboard", appTimeZone],
+  { revalidate: 10 }
+);
+
+export async function getDashboardData() {
+  return getDashboardDataCached();
+}
+
+export async function listVehicles(search = "", filter: "active" | "all" | "inactive" = "active") {
   const term = `%${search.trim()}%`;
   return dbQuery<VehicleRow>(`
     SELECT
       v.*,
-      STRING_AGG(DISTINCT l.name, ', ' ORDER BY l.name) AS lps_names,
+      COALESCE(v.nama_lps, STRING_AGG(DISTINCT l.name, ', ' ORDER BY l.name)) AS lps_names,
       COUNT(DISTINCT va.id)::int AS assignment_count
     FROM vehicles v
     LEFT JOIN vehicle_assignments va ON va.vehicle_id = v.id AND va.active = TRUE
@@ -104,11 +115,22 @@ export async function listVehicles(search = "") {
     WHERE ($1 = '%%'
       OR v.plate_number ILIKE $1
       OR v.code ILIKE $1
+      OR v.nomor_izin ILIKE $1
+      OR v.nama_lps ILIKE $1
+      OR v.wilayah_kerja ILIKE $1
+      OR v.nama_ketua_lps ILIKE $1
+      OR v.kelurahan_lps ILIKE $1
+      OR v.kecamatan_lps ILIKE $1
       OR l.name ILIKE $1
       OR va.driver_name ILIKE $1)
+      AND (
+        $2 = 'all'
+        OR ($2 = 'active' AND v.active = TRUE)
+        OR ($2 = 'inactive' AND v.active = FALSE)
+      )
     GROUP BY v.id
-    ORDER BY v.plate_normalized
-  `, [term]);
+    ORDER BY v.no_urut ASC NULLS LAST, v.code ASC
+  `, [term, filter]);
 }
 
 export async function getVehicle(id: number) {
@@ -162,13 +184,34 @@ export async function listWeighings(filters: {
   `, [search, month, appTimeZone, lps, limit]);
 }
 
-export async function getLpsList() {
+async function getLpsListUncached() {
   return dbQuery<{ id: number; name: string }>(
     "SELECT id, name FROM lps WHERE active = TRUE ORDER BY name"
   );
 }
 
-export async function getDeviceList() {
+const getLpsListCached = unstable_cache(
+  getLpsListUncached,
+  ["timbangqr-lps-list"],
+  { revalidate: 300 }
+);
+
+export async function getLpsList() {
+  return getLpsListCached();
+}
+
+export async function getVehicleCounts() {
+  const row = await dbOne<{ total: number; active: number; inactive: number }>(`
+    SELECT
+      COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE active = TRUE)::int AS active,
+      COUNT(*) FILTER (WHERE active = FALSE)::int AS inactive
+    FROM vehicles
+  `);
+  return row || { total: 0, active: 0, inactive: 0 };
+}
+
+async function getDeviceListUncached() {
   return dbQuery<Record<string, string | number | boolean | null>>(`
     SELECT d.*,
       latest.weight_kg AS latest_weight,
@@ -184,6 +227,16 @@ export async function getDeviceList() {
     ) latest ON TRUE
     ORDER BY d.device_code
   `);
+}
+
+const getDeviceListCached = unstable_cache(
+  getDeviceListUncached,
+  ["timbangqr-device-list"],
+  { revalidate: 10 }
+);
+
+export async function getDeviceList() {
+  return getDeviceListCached();
 }
 
 export async function getMonthlyReport(month: string) {

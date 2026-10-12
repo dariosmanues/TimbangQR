@@ -33,6 +33,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("Login gagal:", error);
-    return NextResponse.json({ error: "Data login tidak valid atau database belum siap." }, { status: 400 });
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: "Format email atau kata sandi tidak valid." }, { status: 400 });
+    }
+    const message = error instanceof Error ? error.message : "Data login tidak valid atau database belum siap.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

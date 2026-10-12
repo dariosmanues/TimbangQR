@@ -1,7 +1,11 @@
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { Pool, type PoolClient, type QueryResultRow, types } from "pg";
 import seed from "../../data/seed.json";
+import octArmada from "../../data/master_armada_harapan_jaya_okt2026.json";
+import { loadEnvIfNeeded } from "./env";
 
 // PostgreSQL mengembalikan BIGINT sebagai string secara default. Nilai aplikasi
 // ini masih berada pada rentang aman Number JavaScript, jadi dikonversi ke number.
@@ -16,8 +20,31 @@ declare global {
   var __timbangInitPromise: Promise<void> | undefined;
 }
 
+function readEnvFileVar(varName: string): string | undefined {
+  try {
+    const candidatePaths = [
+      path.resolve(process.cwd(), ".env"),
+      path.resolve(process.cwd(), ".env.local"),
+      path.resolve(__dirname, "../../.env"),
+      path.resolve(__dirname, "../../../.env"),
+    ];
+    for (const envPath of candidatePaths) {
+      if (fs.existsSync(/*turbopackIgnore: true*/ envPath)) {
+        const content = fs.readFileSync(/*turbopackIgnore: true*/ envPath, "utf-8");
+        const regex = new RegExp(`^${varName}\\s*=\\s*(.+)$`, "m");
+        const match = content.match(regex);
+        if (match) {
+          return match[1].trim().replace(/^['"](.*)['"]$/, "$1");
+        }
+      }
+    }
+  } catch {}
+  return undefined;
+}
+
 function getDatabaseUrl() {
-  const value = process.env.DATABASE_URL?.trim();
+  loadEnvIfNeeded();
+  const value = process.env.DATABASE_URL?.trim() || readEnvFileVar("DATABASE_URL");
   if (!value) {
     throw new Error(
       "DATABASE_URL belum diisi. Salin .env.example menjadi .env lalu isi koneksi PostgreSQL."
@@ -31,15 +58,27 @@ function isSslEnabled() {
   return ["1", "true", "yes", "require"].includes(value);
 }
 
+function shouldAutoInitializeDatabase() {
+  const configured = process.env.DATABASE_AUTO_INIT?.trim().toLowerCase();
+  if (configured) return ["1", "true", "yes", "on"].includes(configured);
+
+  // Vercel menjalankan banyak instance serverless. Menjalankan CREATE TABLE,
+  // seed, dan UPSERT perangkat serial pada setiap instance membuat navigasi
+  // halaman lambat dan tidak diperlukan setelah db:init selesai.
+  return !process.env.VERCEL;
+}
+
 export function getPool() {
   if (globalThis.__timbangPool) return globalThis.__timbangPool;
 
   const pool = new Pool({
     connectionString: getDatabaseUrl(),
     ssl: isSslEnabled() ? { rejectUnauthorized: false } : undefined,
-    max: Number((process.env.DATABASE_POOL_MAX || "10").trim()),
+    // Satu instance Vercel cukup memakai satu koneksi ke URL Neon pooled.
+    // Batas lokal tetap 10 agar pengembangan lokal tidak berubah.
+    max: Number((process.env.DATABASE_POOL_MAX || (process.env.VERCEL ? "1" : "10")).trim()),
     idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 10_000,
+    connectionTimeoutMillis: 20_000,
     application_name: "timbangqr-postgresql",
   });
 
@@ -80,15 +119,55 @@ async function createSchema(client: PoolClient) {
       id SERIAL PRIMARY KEY,
       code TEXT NOT NULL UNIQUE,
       plate_number TEXT NOT NULL,
-      plate_normalized TEXT NOT NULL UNIQUE,
+      plate_normalized TEXT NOT NULL,
       vehicle_type TEXT NOT NULL,
       waste_type TEXT NOT NULL,
       default_tare_kg INTEGER,
       qr_token TEXT NOT NULL UNIQUE,
       active BOOLEAN NOT NULL DEFAULT TRUE,
+      no_urut INTEGER,
+      nomor_izin TEXT,
+      nomor_sk_lps TEXT,
+      tanggal_sk_lps TEXT,
+      kecamatan TEXT,
+      nama_lps TEXT,
+      nomor_surat_permohonan TEXT,
+      tanggal_permohonan TEXT,
+      nama_lps_2 TEXT,
+      nama_ketua_lps TEXT,
+      alamat_lps TEXT,
+      kelurahan_lps TEXT,
+      kecamatan_lps TEXT,
+      wilayah_kerja TEXT,
+      lokasi_tps TEXT DEFAULT 'HARAPAN JAYA',
+      tanggal_terbit_izin TEXT,
+      lampiran_camat TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    ALTER TABLE vehicles 
+      ADD COLUMN IF NOT EXISTS no_urut INTEGER,
+      ADD COLUMN IF NOT EXISTS nomor_izin TEXT,
+      ADD COLUMN IF NOT EXISTS nomor_sk_lps TEXT,
+      ADD COLUMN IF NOT EXISTS tanggal_sk_lps TEXT,
+      ADD COLUMN IF NOT EXISTS kecamatan TEXT,
+      ADD COLUMN IF NOT EXISTS nama_lps TEXT,
+      ADD COLUMN IF NOT EXISTS nomor_surat_permohonan TEXT,
+      ADD COLUMN IF NOT EXISTS tanggal_permohonan TEXT,
+      ADD COLUMN IF NOT EXISTS nama_lps_2 TEXT,
+      ADD COLUMN IF NOT EXISTS nama_ketua_lps TEXT,
+      ADD COLUMN IF NOT EXISTS alamat_lps TEXT,
+      ADD COLUMN IF NOT EXISTS kelurahan_lps TEXT,
+      ADD COLUMN IF NOT EXISTS kecamatan_lps TEXT,
+      ADD COLUMN IF NOT EXISTS wilayah_kerja TEXT,
+      ADD COLUMN IF NOT EXISTS lokasi_tps TEXT DEFAULT 'HARAPAN JAYA',
+      ADD COLUMN IF NOT EXISTS tanggal_terbit_izin TEXT,
+      ADD COLUMN IF NOT EXISTS lampiran_camat TEXT;
+
+    ALTER TABLE vehicles DROP CONSTRAINT IF EXISTS vehicles_plate_normalized_key;
+    CREATE INDEX IF NOT EXISTS idx_vehicles_plate_normalized ON vehicles(plate_normalized);
+    CREATE INDEX IF NOT EXISTS idx_vehicles_nomor_izin ON vehicles(nomor_izin);
 
     CREATE TABLE IF NOT EXISTS vehicle_assignments (
       id SERIAL PRIMARY KEY,
@@ -350,26 +429,193 @@ async function ensureSerialDevice(client: PoolClient) {
   ]);
 }
 
+async function syncOct2026MasterArmada(client: PoolClient) {
+  // Pastikan sinkronisasi awal master Oktober 2026 hanya dieksekusi sekali.
+  // Jangan menimpa status armada yang telah diaktifkan/dinonaktifkan secara manual oleh pengguna.
+  const syncCheck = await client.query<{ value: string }>(
+    "SELECT value FROM settings WHERE key = 'oct_2026_master_synced'"
+  );
+  if (syncCheck.rows[0]?.value === "true") {
+    return;
+  }
+
+  const lpsRows = await client.query<{ id: number; code: string; name: string }>("SELECT id, code, name FROM lps");
+  const lpsMap = new Map<string, number>();
+  for (const l of lpsRows.rows) {
+    lpsMap.set(l.name.toUpperCase().trim(), l.id);
+    lpsMap.set(l.name.toUpperCase().replace(/^LPS\s+/, "").trim(), l.id);
+    lpsMap.set(l.code.toUpperCase().trim(), l.id);
+  }
+  lpsMap.set("SUKAMULIA", lpsMap.get("LPS SUKA MULIA") || 24);
+  lpsMap.set("SUKA MULIA", lpsMap.get("LPS SUKA MULIA") || 24);
+
+  const octPlateSet = new Set(octArmada.map((a: any) => a.plate_normalized));
+
+  // Nonaktifkan armada lama di luar Harapan Jaya Oktober 2026 hanya jika belum ditandai
+  await client.query(
+    "UPDATE vehicles SET active = FALSE, code = 'ARM-HIST-' || LPAD(id::text, 4, '0') WHERE code NOT LIKE 'ARM-HIST-%' AND plate_normalized NOT IN (" +
+      Array.from(octPlateSet).map((_, i) => `$${i + 1}`).join(", ") +
+      ")",
+    Array.from(octPlateSet)
+  );
+
+  // Prefix sementara untuk armada aktif agar aman saat penomoran ulang ARM-HJ-XXXX
+  await client.query("UPDATE vehicles SET code = 'OLD-' || id WHERE active = TRUE");
+
+  for (let i = 0; i < octArmada.length; i++) {
+    const item = octArmada[i];
+    const code = `ARM-HJ-${String(i + 1).padStart(4, "0")}`;
+    const plateNormalized = item.plate_normalized;
+    const plateNumber = item.nomor_polisi.trim().toUpperCase();
+    const vehicleType = item.jenis_armada || "PICKUP";
+    const wasteType = "SAMPAH RUMAH TANGGA";
+
+    const kel = (item.kelurahan_lps || "").toUpperCase().trim();
+    const nama = (item.nama_lps || "").toUpperCase().trim();
+    const lpsId =
+      lpsMap.get(nama) ||
+      lpsMap.get(`LPS ${nama}`) ||
+      lpsMap.get(kel) ||
+      lpsMap.get(`LPS ${kel}`);
+
+    const existingByIzin = await client.query<{ id: number; default_tare_kg: number | null }>(
+      "SELECT id, default_tare_kg FROM vehicles WHERE nomor_izin = $1",
+      [item.nomor_izin]
+    );
+
+    let vehicleId: number;
+
+    if (existingByIzin.rows[0]) {
+      vehicleId = existingByIzin.rows[0].id;
+      await client.query(
+        `UPDATE vehicles SET
+          code = $1, plate_number = $2, plate_normalized = $3, vehicle_type = $4,
+          waste_type = $5, active = TRUE, no_urut = $6, nomor_sk_lps = $7,
+          tanggal_sk_lps = $8, kecamatan = $9, nama_lps = $10,
+          nomor_surat_permohonan = $11, tanggal_permohonan = $12, nama_lps_2 = $13,
+          nama_ketua_lps = $14, alamat_lps = $15, kelurahan_lps = $16,
+          kecamatan_lps = $17, wilayah_kerja = $18, lokasi_tps = $19,
+          tanggal_terbit_izin = $20, lampiran_camat = $21, updated_at = NOW()
+        WHERE id = $22`,
+        [
+          code, plateNumber, plateNormalized, vehicleType, wasteType,
+          item.no, item.nomor_sk_lps, item.tanggal_sk_lps, item.kecamatan,
+          item.nama_lps, item.nomor_surat_permohonan, item.tanggal_permohonan,
+          item.nama_lps_2, item.nama_ketua_lps, item.alamat_lps,
+          item.kelurahan_lps, item.kecamatan_lps, item.wilayah_kerja,
+          item.lokasi_tps || "HARAPAN JAYA", item.tanggal_terbit_izin,
+          item.lampiran_camat, vehicleId
+        ]
+      );
+    } else {
+      const existingByPlate = await client.query<{ id: number; default_tare_kg: number | null }>(
+        "SELECT id, default_tare_kg FROM vehicles WHERE plate_normalized = $1 AND nomor_izin IS NULL LIMIT 1",
+        [plateNormalized]
+      );
+
+      if (existingByPlate.rows[0]) {
+        vehicleId = existingByPlate.rows[0].id;
+        await client.query(
+          `UPDATE vehicles SET
+            code = $1, plate_number = $2, plate_normalized = $3, vehicle_type = $4,
+            waste_type = $5, active = TRUE, no_urut = $6, nomor_izin = $7,
+            nomor_sk_lps = $8, tanggal_sk_lps = $9, kecamatan = $10,
+            nama_lps = $11, nomor_surat_permohonan = $12, tanggal_permohonan = $13,
+            nama_lps_2 = $14, nama_ketua_lps = $15, alamat_lps = $16,
+            kelurahan_lps = $17, kecamatan_lps = $18, wilayah_kerja = $19,
+            lokasi_tps = $20, tanggal_terbit_izin = $21, lampiran_camat = $22, updated_at = NOW()
+          WHERE id = $23`,
+          [
+            code, plateNumber, plateNormalized, vehicleType, wasteType,
+            item.no, item.nomor_izin, item.nomor_sk_lps, item.tanggal_sk_lps, item.kecamatan,
+            item.nama_lps, item.nomor_surat_permohonan, item.tanggal_permohonan,
+            item.nama_lps_2, item.nama_ketua_lps, item.alamat_lps,
+            item.kelurahan_lps, item.kecamatan_lps, item.wilayah_kerja,
+            item.lokasi_tps || "HARAPAN JAYA", item.tanggal_terbit_izin,
+            item.lampiran_camat, vehicleId
+          ]
+        );
+      } else {
+        const qrToken = crypto.createHash("sha256")
+          .update(`HJ-QR-${plateNormalized}-${item.nomor_izin}`)
+          .digest("hex")
+          .slice(0, 32);
+
+        const ins = await client.query<{ id: number }>(
+          `INSERT INTO vehicles (
+            code, plate_number, plate_normalized, vehicle_type, waste_type,
+            default_tare_kg, qr_token, active, no_urut, nomor_izin,
+            nomor_sk_lps, tanggal_sk_lps, kecamatan, nama_lps,
+            nomor_surat_permohonan, tanggal_permohonan, nama_lps_2,
+            nama_ketua_lps, alamat_lps, kelurahan_lps, kecamatan_lps,
+            wilayah_kerja, lokasi_tps, tanggal_terbit_izin, lampiran_camat
+          ) VALUES (
+            $1, $2, $3, $4, $5, NULL, $6, TRUE, $7, $8,
+            $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
+            $20, $21, $22, $23
+          ) RETURNING id`,
+          [
+            code, plateNumber, plateNormalized, vehicleType, wasteType,
+            qrToken, item.no, item.nomor_izin,
+            item.nomor_sk_lps, item.tanggal_sk_lps, item.kecamatan,
+            item.nama_lps, item.nomor_surat_permohonan, item.tanggal_permohonan,
+            item.nama_lps_2, item.nama_ketua_lps, item.alamat_lps,
+            item.kelurahan_lps, item.kecamatan_lps, item.wilayah_kerja,
+            item.lokasi_tps || "HARAPAN JAYA", item.tanggal_terbit_izin,
+            item.lampiran_camat
+          ]
+        );
+        vehicleId = ins.rows[0].id;
+      }
+    }
+
+    if (lpsId) {
+      await client.query(
+        `INSERT INTO vehicle_assignments (vehicle_id, lps_id, driver_name, tare_kg, is_primary, active)
+         VALUES ($1, $2, $3, NULL, TRUE, TRUE)
+         ON CONFLICT DO NOTHING`,
+        [vehicleId, lpsId, item.nama_ketua_lps || null]
+      );
+    }
+  }
+
+  await client.query(`
+    INSERT INTO settings (key, value)
+    VALUES ('oct_2026_master_synced', 'true')
+    ON CONFLICT (key) DO UPDATE SET value = 'true', updated_at = NOW()
+  `);
+}
+
+// Reset promise jika modul di-compile ulang oleh Next.js
+globalThis.__timbangInitPromise = undefined;
+globalThis.__timbangPool = undefined;
+
 export async function ensureDatabase() {
   if (globalThis.__timbangInitPromise) return globalThis.__timbangInitPromise;
 
   globalThis.__timbangInitPromise = (async () => {
-    const pool = getPool();
-    const client = await pool.connect();
+    let client: PoolClient | undefined;
     try {
+      const pool = getPool();
+      client = await pool.connect();
       await client.query("SELECT pg_advisory_lock($1)", [903202608]);
       await client.query("BEGIN");
       await createSchema(client);
       await seedDatabase(client);
+      await syncOct2026MasterArmada(client);
       await ensureSerialDevice(client);
       await client.query("COMMIT");
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      if (client) {
+        await client.query("ROLLBACK").catch(() => undefined);
+      }
       globalThis.__timbangInitPromise = undefined;
       throw error;
     } finally {
-      await client.query("SELECT pg_advisory_unlock($1)", [903202608]).catch(() => undefined);
-      client.release();
+      if (client) {
+        await client.query("SELECT pg_advisory_unlock($1)", [903202608]).catch(() => undefined);
+        client.release();
+      }
     }
   })();
 
@@ -381,10 +627,29 @@ export async function dbQuery<T extends QueryResultRow = QueryResultRow>(
   params: unknown[] = [],
   executor?: DbExecutor
 ) {
-  if (!executor) await ensureDatabase();
+  if (!executor && shouldAutoInitializeDatabase()) await ensureDatabase();
   const target = executor || getPool();
-  const result = await target.query<T>(sql, params);
-  return result.rows;
+  try {
+    const result = await target.query<T>(sql, params);
+    return result.rows;
+  } catch (err: any) {
+    const isTransient =
+      err?.code === "57P01" ||
+      err?.message?.includes("Connection terminated") ||
+      err?.message?.includes("timeout") ||
+      err?.message?.includes("Connection ended");
+    if (isTransient && !executor) {
+      console.warn("[PostgreSQL] Melakukan query ulang karena koneksi sementara:", err.message);
+      // Buat koneksi pool baru bila pool lama terputus
+      if (globalThis.__timbangPool) {
+        globalThis.__timbangPool = undefined;
+      }
+      const retryTarget = getPool();
+      const retryResult = await retryTarget.query<T>(sql, params);
+      return retryResult.rows;
+    }
+    throw err;
+  }
 }
 
 export async function dbOne<T extends QueryResultRow = QueryResultRow>(
@@ -397,7 +662,7 @@ export async function dbOne<T extends QueryResultRow = QueryResultRow>(
 }
 
 export async function withTransaction<T>(callback: (client: PoolClient) => Promise<T>) {
-  await ensureDatabase();
+  if (shouldAutoInitializeDatabase()) await ensureDatabase();
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
