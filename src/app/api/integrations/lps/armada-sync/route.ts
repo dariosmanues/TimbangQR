@@ -312,6 +312,8 @@ export async function POST(request: Request) {
               active: true,
               nomor_izin: item.noIzinOperasi || null,
               qr_token: qrToken,
+              nama_lps: item.namaLps || null,
+              kelurahan_lps: kelurahanNama || null,
             };
             vehicleByPlate.set(plateNormalized, newRow);
             if (item.noIzinOperasi) vehicleByIzin.set(item.noIzinOperasi, newRow);

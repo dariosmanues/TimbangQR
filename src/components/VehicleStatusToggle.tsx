@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Power, Loader2, ExternalLink } from "lucide-react";
 
@@ -25,10 +25,11 @@ export default function VehicleStatusToggle({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const router = useRouter();
 
-  // Keep state in sync if parent prop changes
-  useEffect(() => {
+  const [prevInitialActive, setPrevInitialActive] = useState(initialActive);
+  if (prevInitialActive !== initialActive) {
+    setPrevInitialActive(initialActive);
     setActive(initialActive);
-  }, [initialActive]);
+  }
 
   async function handleToggle(e: React.MouseEvent) {
     e.preventDefault();

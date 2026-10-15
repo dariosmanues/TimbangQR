@@ -328,9 +328,7 @@ async function flushQueue() {
         persistQueue();
       } catch (itemError) {
         if (itemError instanceof DeliveryError && !itemError.retryable) {
-          console.warn(`[Serial Bridge] Mengabaikan antrean karena error permanen: ${itemError.message}`);
-          queue = [];
-          persistQueue();
+          console.warn(`[Serial Bridge] Pengiriman antrean ditunda karena error server: ${itemError.message}`);
           break;
         }
         throw itemError;
@@ -647,6 +645,7 @@ const server = http.createServer(async (request, response) => {
         weight_kg: 0,
         stable: true,
         indicator_raw: "PING_TEST",
+        dry_run: true,
         timestamp: new Date().toISOString(),
         serial_port: config.path,
         interface_type: config.interfaceType,
