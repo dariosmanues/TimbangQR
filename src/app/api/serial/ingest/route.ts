@@ -51,22 +51,11 @@ export async function POST(request: Request) {
 
     const isDryRun = input.dry_run || input.indicator_raw === "PING_TEST";
     if (isDryRun) {
-      await dbOne(`
-        UPDATE weighbridge_devices
-        SET last_seen_at = GREATEST(
-              COALESCE(last_seen_at, $1::timestamptz),
-              $1::timestamptz
-            ),
-            firmware_version = 'PC-SERIAL-BRIDGE',
-            port_name = COALESCE($2, port_name),
-            connection_type = COALESCE($3, connection_type)
-        WHERE id = $4
-      `, [recordedAt, input.serial_port || null, input.interface_type || null, device.id]);
-
       return NextResponse.json({
         ok: true,
         dry_run: true,
-        message: "Autentikasi dan koneksi berhasil. Data tes tidak disimpan ke pembacaan timbangan.",
+        device_code: device.device_code,
+        message: "Autentikasi dan koneksi berhasil. Data tes tidak mempengaruhi status pembacaan timbangan.",
       });
     }
 

@@ -297,6 +297,8 @@ async function sendReading(payload) {
   console.log(`[Serial Bridge] Ingest berhasil: ${payload.weight_kg} kg | ${payload.stable ? "STABIL" : "TIDAK STABIL"}.`);
 }
 
+const MAX_QUEUE_ITEMS = 5000;
+
 function enqueue(payload) {
   const lastItem = queue[queue.length - 1];
   if (
@@ -311,8 +313,8 @@ function enqueue(payload) {
   }
 
   queue.push(payload);
-  if (queue.length > 100) {
-    queue = queue.slice(queue.length - 100);
+  if (queue.length > MAX_QUEUE_ITEMS) {
+    queue = queue.slice(queue.length - MAX_QUEUE_ITEMS);
   }
   persistQueue();
 }
@@ -384,11 +386,21 @@ async function handleFrame(frame) {
     await sendReading(payload);
     await flushQueue();
   } catch (error) {
-    if (error instanceof DeliveryError && error.retryable) {
-      enqueue(payload);
-    }
+    // Simpan ke antrean offline jika pengiriman gagal (termasuk HTTP 401 saat kredensial salah)
+    // agar data pembacaan fisik timbangan di lapangan tidak hilang
+    enqueue(payload);
   }
   return { ok: true, ...payload };
+}
+
+let frameChain = Promise.resolve();
+
+function scheduleFrame(frame) {
+  frameChain = frameChain
+    .then(() => processFrame(frame))
+    .catch((error) => {
+      console.error(`[Serial Bridge] Error frame pipeline: ${error?.message || error}`);
+    });
 }
 
 function consumeChunk(chunk) {
@@ -405,7 +417,7 @@ function consumeChunk(chunk) {
     idleTimer = setTimeout(() => {
       const frame = inputBuffer;
       inputBuffer = "";
-      void processFrame(frame);
+      scheduleFrame(frame);
     }, Math.max(30, Number(config.idleTimeoutMs || 120)));
     return;
   }
@@ -416,7 +428,7 @@ function consumeChunk(chunk) {
   while ((position = inputBuffer.indexOf(delimiter)) >= 0) {
     const frame = inputBuffer.slice(0, position);
     inputBuffer = inputBuffer.slice(position + delimiter.length);
-    if (frame.trim()) void processFrame(frame);
+    if (frame.trim()) scheduleFrame(frame);
   }
 }
 

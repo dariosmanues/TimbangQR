@@ -26,8 +26,11 @@ jobs:
       - name: Smoke test packaged Windows Bridge
         shell: pwsh
         run: |
-          $app = Join-Path $PWD "dist\win-unpacked\TimbangQR Bridge.exe"
-          if (!(Test-Path $app)) { throw "Executable hasil packaging tidak ditemukan." }
+          $app = Join-Path $PWD "dist\win-ia32-unpacked\TimbangQR Bridge.exe"
+          if (!(Test-Path $app)) {
+            $app = Join-Path $PWD "dist\win-unpacked\TimbangQR Bridge.exe"
+          }
+          if (!(Test-Path $app)) { throw "Executable hasil packaging tidak ditemukan pada dist\win-ia32-unpacked maupun dist\win-unpacked." }
           $process = Start-Process -FilePath $app -PassThru
           $headers = @{ "x-bridge-key" = "bridge-admin-key-ganti-sebelum-produksi" }
           $ready = $false

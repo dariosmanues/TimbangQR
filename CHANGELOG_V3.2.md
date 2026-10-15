@@ -13,5 +13,10 @@
 - Menambahkan **Single Instance Lock** (`app.requestSingleInstanceLock`) pada Electron agar aplikasi tidak berjalan ganda secara bersamaan di system tray.
 - Menambahkan pembersihan otomatis proses orphan (`killOrphanOnPort(8787)`) sebelum menjalankan Serial Agent baru untuk mencegah error `EADDRINUSE`.
 - Mencegah penghapusan antrean data timbangan (`flushQueue`) saat terjadi error permanen/autentikasi (seperti HTTP 401); data antrean tetap aman di disk hingga kunci/server dibetulkan.
-- Menambahkan mode `dry_run` pada tes koneksi Vercel sehingga verifikasi API key berhasil tanpa menyimpan pembacaan semu `0 kg PING_TEST` ke riwayat timbangan kasir.
+- Menjamin seluruh data pembacaan fisik baru tetap otomatis masuk antrean offline saat terjadi error (termasuk HTTP 401) sehingga riwayat penimbangan di lapangan tidak hilang.
+- Mengurutkan pengiriman frame serial secara sekuensial (FIFO promise chain) untuk mencegah race condition / pengiriman frame secara paralel ke Vercel.
+- Memperbesar kapasitas antrean offline lokal dari 100 menjadi 5.000 data timbangan (~1 MB JSON buffer).
+- Mengamankan `killOrphanOnPort` agar hanya mematikan proses turunan Node/Electron/TimbangQR pada port 8787 dan tidak mengganggu proses Windows lainnya.
+- Mode `dry_run` verifikasi koneksi tidak memperbarui `last_seen_at` sehingga kolom "Terakhir menerima" murni mencatat pembacaan timbangan riil.
+- Memperbaiki path executable smoke test pada CI workflow GitHub Actions (`dist\win-ia32-unpacked`).
 

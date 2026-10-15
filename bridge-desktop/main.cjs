@@ -166,6 +166,23 @@ async function stopAgent() {
     }, 2000).unref();
   });
 }
+function isTimbangProcess(pid) {
+  try {
+    const taskInfo = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const procName = (taskInfo.split(",")[0] || "").replace(/^"|"$/g, "").toLowerCase();
+    return (
+      procName.includes("node") ||
+      procName.includes("electron") ||
+      procName.includes("timbang")
+    );
+  } catch {
+    return false;
+  }
+}
+
 function killOrphanOnPort(port = 8787) {
   try {
     if (process.platform === "win32") {
@@ -174,9 +191,11 @@ function killOrphanOnPort(port = 8787) {
         const parts = line.trim().split(/\s+/);
         const pid = parts[parts.length - 1];
         if (pid && pid !== "0" && Number(pid) !== process.pid) {
-          try {
-            execSync(`taskkill /F /PID ${pid}`, { stdio: "ignore" });
-          } catch {}
+          if (isTimbangProcess(pid)) {
+            try {
+              execSync(`taskkill /F /PID ${pid}`, { stdio: "ignore" });
+            } catch {}
+          }
         }
       }
     }
