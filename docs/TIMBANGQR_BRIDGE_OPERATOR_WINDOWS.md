@@ -11,7 +11,9 @@ Bridge menggantikan perintah developer `npm run serial:agent`. Setelah installer
 
 Credential disimpan menggunakan Windows Data Protection API. Data antrean dan konfigurasi serial berada di profil Windows operator, bukan folder source code.
 
-## Build installer
+## Build installer (Kompatibel Windows 7 32-bit / Windows 10 / 11)
+
+Installer menggunakan Electron 22 (Chromium 109) dan target arsitektur `ia32` agar dapat berjalan langsung di komputer lama Windows 7 32-bit tanpa membutuhkan Node.js di komputer target.
 
 Developer memicu workflow GitHub Actions **Build TimbangQR Bridge for Windows** atau menjalankan:
 
@@ -20,4 +22,6 @@ npm install
 npm run bridge:build
 ```
 
-Installer hasil build berada di `dist/TimbangQR-Bridge-Setup-*.exe`.
+Installer hasil build berada di:
+`dist/TimbangQR-Bridge-Setup-win7-32bit-*.exe`
+

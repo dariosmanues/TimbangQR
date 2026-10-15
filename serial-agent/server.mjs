@@ -1,4 +1,5 @@
 import http from "node:http";
+import https from "node:https";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,6 +54,9 @@ function normalizeIngestUrl(raw) {
   }
   url = url.replace(/\/+$/, "");
   if (!url) return "";
+  if (url.startsWith("http://") && url.includes(".vercel.app")) {
+    url = "https://" + url.slice(7);
+  }
   if (!url.endsWith("/api/serial/ingest")) {
     url += "/api/serial/ingest";
   }
@@ -193,6 +197,62 @@ class DeliveryError extends Error {
   }
 }
 
+async function executePostJson(targetUrl, headers, data, timeoutMs = 5000, maxRedirects = 3) {
+  return new Promise((resolve, reject) => {
+    let currentUrl = targetUrl;
+    let redirectsRemaining = maxRedirects;
+
+    function doRequest(urlStr) {
+      try {
+        const parsed = new URL(urlStr);
+        const client = parsed.protocol === "https:" ? https : http;
+        const bodyStr = JSON.stringify(data);
+        const req = client.request(parsed, {
+          method: "POST",
+          headers: {
+            ...headers,
+            "content-type": "application/json",
+            "content-length": Buffer.byteLength(bodyStr),
+          },
+          timeout: timeoutMs,
+        }, (res) => {
+          if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location && redirectsRemaining > 0) {
+            redirectsRemaining--;
+            const nextUrl = new URL(res.headers.location, urlStr).toString();
+            res.resume();
+            return doRequest(nextUrl);
+          }
+
+          let text = "";
+          res.setEncoding("utf8");
+          res.on("data", (chunk) => { text += chunk; });
+          res.on("end", () => {
+            resolve({
+              ok: (res.statusCode >= 200 && res.statusCode < 300),
+              status: res.statusCode || 500,
+              text,
+            });
+          });
+        });
+
+        req.on("timeout", () => {
+          req.destroy(new Error("Timeout koneksi (5 detik)."));
+        });
+        req.on("error", (err) => {
+          reject(err);
+        });
+
+        req.write(bodyStr);
+        req.end();
+      } catch (err) {
+        reject(err);
+      }
+    }
+
+    doRequest(currentUrl);
+  });
+}
+
 async function sendReading(payload) {
   if (!ingestUrl) {
     lastIngestStatus = "no_url";
@@ -202,15 +262,15 @@ async function sendReading(payload) {
 
   let response;
   try {
-    response = await fetch(ingestUrl, {
-      method: "POST",
-      headers: {
+    response = await executePostJson(
+      ingestUrl,
+      {
         "content-type": "application/json",
         "x-serial-key": ingestKey,
       },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(5000),
-    });
+      payload,
+      5000
+    );
   } catch (networkError) {
     const errorMsg = networkError instanceof Error ? networkError.message : "Gagal terhubung ke server.";
     lastIngestStatus = "network_error";
@@ -219,7 +279,7 @@ async function sendReading(payload) {
   }
 
   if (!response.ok) {
-    const text = await response.text();
+    const text = response.text || "";
     lastIngestStatus = response.status;
     let detail = text.slice(0, 180);
     try {
@@ -608,6 +668,10 @@ const server = http.createServer(async (request, response) => {
     lastSerialError = error instanceof Error ? error.message : "Bridge error.";
     return sendJson(response, 500, { error: getCombinedError() });
   }
+});
+
+server.on("error", (err) => {
+  console.error(`[Serial Bridge Server Error]`, err);
 });
 
 server.listen(bridgePort, bridgeHost, () => {

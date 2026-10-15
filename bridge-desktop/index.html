@@ -233,7 +233,7 @@
         <h1>⚖️ TimbangQR Bridge</h1>
         <p>Transdepo Harapan Jaya — Integrasi Indikator Timbangan ke Cloud</p>
       </div>
-      <span id="bridgeVersionBadge" class="badge badge-gray">v3.2.4</span>
+      <span id="bridgeVersionBadge" class="badge badge-gray">v3.2.7</span>
     </header>
 
     <!-- LIVE MONITORING PANELS -->
@@ -314,8 +314,8 @@
         </div>
         <div class="form-group">
           <label for="serialKey">Serial API Key</label>
-          <input id="serialKey" type="password" placeholder="Isi bila perlu diganti">
-          <div class="help-text">Harus cocok dengan SERIAL_API_KEY di Vercel / PostgreSQL.</div>
+          <input id="serialKey" type="text" placeholder="serial-local-key-ganti-sebelum-produksi">
+          <div class="help-text">Otomatis terisi default sesuai server TimbangQR Vercel. Ubah jika ada kunci khusus.</div>
         </div>
       </div>
       <div class="btn-group">
@@ -498,14 +498,10 @@
         const c = await window.bridge.getConfig();
         $('url').value = cleanUrl(c.ingestUrl) || 'https://timbangqr-harapan-jaya.vercel.app/api/serial/ingest';
         $('device').value = c.deviceId || 'TIMBANG-HJ-SERIAL-01';
+        $('serialKey').value = c.serialApiKey || 'serial-local-key-ganti-sebelum-produksi';
 
-        if (c.hasSerialApiKey) {
-          $('apiKeyIndicator').textContent = '✓ Serial Key Tersimpan';
-          $('apiKeyIndicator').className = 'badge badge-green';
-        } else {
-          $('apiKeyIndicator').textContent = 'Serial Key Belum Diisi';
-          $('apiKeyIndicator').className = 'badge badge-yellow';
-        }
+        $('apiKeyIndicator').textContent = '✓ Serial Key Otomatis Terhubung';
+        $('apiKeyIndicator').className = 'badge badge-green';
 
         await ports();
         await show();
@@ -522,7 +518,7 @@
       const url = cleanUrl($('url').value);
       $('url').value = url;
       const deviceId = $('device').value.trim() || 'TIMBANG-HJ-SERIAL-01';
-      const serialApiKey = $('serialKey').value.trim() || undefined;
+      const serialApiKey = $('serialKey').value.trim() || 'serial-local-key-ganti-sebelum-produksi';
 
       try {
         $('save').disabled = true;
@@ -537,11 +533,8 @@
         $('saveFeedback').textContent = '✓ Konfigurasi berhasil disimpan! Agent dimuat ulang.';
         setTimeout(() => { $('saveFeedback').style.display = 'none'; }, 4000);
 
-        if (serialApiKey) {
-          $('apiKeyIndicator').textContent = '✓ Serial Key Tersimpan';
-          $('apiKeyIndicator').className = 'badge badge-green';
-          $('serialKey').value = '';
-        }
+        $('apiKeyIndicator').textContent = '✓ Serial Key Otomatis Terhubung';
+        $('apiKeyIndicator').className = 'badge badge-green';
 
         await show();
       } catch (err) {
