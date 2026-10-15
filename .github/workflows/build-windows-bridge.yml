@@ -3,7 +3,7 @@ name: Build TimbangQR Bridge for Windows
 on:
   workflow_dispatch:
   push:
-    branches: [main, feat/windows-operator-bridge]
+    branches: [main, feat/windows-operator-bridge, fix/bridge-queue-and-ingest]
     paths:
       - "bridge-desktop/**"
       - "serial-agent/**"

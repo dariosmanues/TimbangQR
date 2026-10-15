@@ -1,4 +1,5 @@
 import http from "node:http";
+import https from "node:https";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,6 +44,25 @@ const toBoolean = (value, fallback = false) => {
 
 const decodeEscapes = (value) => String(value ?? "").replace(/\\r/g, "\r").replace(/\\n/g, "\n").replace(/\\t/g, "\t").replace(/\\0/g, "\0");
 
+function normalizeIngestUrl(raw) {
+  let url = String(raw || "").trim();
+  const mdMatch = url.match(/\[([^\]]+)\]\(([^)]+)\)/);
+  if (mdMatch) {
+    url = mdMatch[2].trim();
+  } else {
+    url = url.replace(/^[<[(]+|[>\])]+$/g, "").trim();
+  }
+  url = url.replace(/\/+$/, "");
+  if (!url) return "";
+  if (url.startsWith("http://") && url.includes(".vercel.app")) {
+    url = "https://" + url.slice(7);
+  }
+  if (!url.endsWith("/api/serial/ingest")) {
+    url += "/api/serial/ingest";
+  }
+  return url;
+}
+
 const defaultConfig = {
   path: process.env.SERIAL_PORT || "COM1",
   interfaceType: process.env.SERIAL_INTERFACE || "RS232",
@@ -80,9 +100,9 @@ if (!Array.isArray(queue)) queue = [];
 const bridgeHost = process.env.SERIAL_BRIDGE_HOST || "127.0.0.1";
 const bridgePort = toNumber(process.env.SERIAL_BRIDGE_PORT, 8787);
 const bridgeAdminKey = process.env.SERIAL_BRIDGE_ADMIN_KEY || "bridge-admin-key-ganti-sebelum-produksi";
-const ingestUrl = process.env.SERIAL_INGEST_URL || "http://127.0.0.1:3000/api/serial/ingest";
-const ingestKey = process.env.SERIAL_API_KEY || "serial-local-key-ganti-sebelum-produksi";
-const deviceId = process.env.SERIAL_DEVICE_ID || "TIMBANG-HJ-SERIAL-01";
+let ingestUrl = normalizeIngestUrl(process.env.SERIAL_INGEST_URL || "https://timbangqr-harapan-jaya.vercel.app/api/serial/ingest");
+let ingestKey = process.env.SERIAL_API_KEY || "serial-local-key-ganti-sebelum-produksi";
+let deviceId = process.env.SERIAL_DEVICE_ID || "TIMBANG-HJ-SERIAL-01";
 
 let serialPort = null;
 let connected = false;
@@ -92,7 +112,10 @@ let inputBuffer = "";
 let idleTimer = null;
 let reconnectTimer = null;
 let latest = null;
-let lastError = "";
+let lastSerialError = "";
+let lastIngestError = "";
+let lastIngestStatus = null;
+let lastIngestAt = null;
 let lastConnectedAt = null;
 let lastDisconnectedAt = null;
 let recentWeights = [];
@@ -174,27 +197,123 @@ class DeliveryError extends Error {
   }
 }
 
-async function sendReading(payload) {
-  const response = await fetch(ingestUrl, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-serial-key": ingestKey,
-    },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(5000),
+async function executePostJson(targetUrl, headers, data, timeoutMs = 5000, maxRedirects = 3) {
+  return new Promise((resolve, reject) => {
+    let currentUrl = targetUrl;
+    let redirectsRemaining = maxRedirects;
+
+    function doRequest(urlStr) {
+      try {
+        const parsed = new URL(urlStr);
+        const client = parsed.protocol === "https:" ? https : http;
+        const bodyStr = JSON.stringify(data);
+        const req = client.request(parsed, {
+          method: "POST",
+          headers: {
+            ...headers,
+            "content-type": "application/json",
+            "content-length": Buffer.byteLength(bodyStr),
+          },
+          timeout: timeoutMs,
+        }, (res) => {
+          if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location && redirectsRemaining > 0) {
+            redirectsRemaining--;
+            const nextUrl = new URL(res.headers.location, urlStr).toString();
+            res.resume();
+            return doRequest(nextUrl);
+          }
+
+          let text = "";
+          res.setEncoding("utf8");
+          res.on("data", (chunk) => { text += chunk; });
+          res.on("end", () => {
+            resolve({
+              ok: (res.statusCode >= 200 && res.statusCode < 300),
+              status: res.statusCode || 500,
+              text,
+            });
+          });
+        });
+
+        req.on("timeout", () => {
+          req.destroy(new Error("Timeout koneksi (5 detik)."));
+        });
+        req.on("error", (err) => {
+          reject(err);
+        });
+
+        req.write(bodyStr);
+        req.end();
+      } catch (err) {
+        reject(err);
+      }
+    }
+
+    doRequest(currentUrl);
   });
-  if (!response.ok) {
-    const text = await response.text();
-    const retryable = response.status >= 500 || response.status === 408 || response.status === 429;
-    throw new DeliveryError(`Server aplikasi ${response.status}: ${text.slice(0, 180)}`, retryable);
+}
+
+async function sendReading(payload) {
+  if (!ingestUrl) {
+    lastIngestStatus = "no_url";
+    lastIngestError = "URL ingest belum dikonfigurasi.";
+    throw new DeliveryError(lastIngestError, false);
   }
+
+  let response;
+  try {
+    response = await executePostJson(
+      ingestUrl,
+      {
+        "content-type": "application/json",
+        "x-serial-key": ingestKey,
+      },
+      payload,
+      5000
+    );
+  } catch (networkError) {
+    const errorMsg = networkError instanceof Error ? networkError.message : "Gagal terhubung ke server.";
+    lastIngestStatus = "network_error";
+    lastIngestError = errorMsg;
+    throw new DeliveryError(`Jaringan/Server tidak merespons: ${errorMsg}`, true);
+  }
+
+  if (!response.ok) {
+    const text = response.text || "";
+    lastIngestStatus = response.status;
+    let detail = text.slice(0, 180);
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed.error) detail = parsed.error;
+    } catch {}
+    lastIngestError = `Server aplikasi HTTP ${response.status}: ${detail}`;
+    const retryable = response.status >= 500 || response.status === 408 || response.status === 429;
+    throw new DeliveryError(lastIngestError, retryable);
+  }
+
+  lastIngestStatus = 200;
+  lastIngestError = "";
+  lastIngestAt = new Date().toISOString();
   console.log(`[Serial Bridge] Ingest berhasil: ${payload.weight_kg} kg | ${payload.stable ? "STABIL" : "TIDAK STABIL"}.`);
 }
 
 function enqueue(payload) {
+  const lastItem = queue[queue.length - 1];
+  if (
+    lastItem
+    && lastItem.weight_kg === payload.weight_kg
+    && lastItem.stable === payload.stable
+  ) {
+    lastItem.timestamp = payload.timestamp;
+    lastItem.indicator_raw = payload.indicator_raw;
+    persistQueue();
+    return;
+  }
+
   queue.push(payload);
-  if (queue.length > 5000) queue = queue.slice(queue.length - 5000);
+  if (queue.length > 100) {
+    queue = queue.slice(queue.length - 100);
+  }
   persistQueue();
 }
 
@@ -203,16 +322,22 @@ async function flushQueue() {
   flushing = true;
   try {
     while (queue.length > 0) {
-      await sendReading(queue[0]);
-      queue.shift();
-      persistQueue();
+      try {
+        await sendReading(queue[0]);
+        queue.shift();
+        persistQueue();
+      } catch (itemError) {
+        if (itemError instanceof DeliveryError && !itemError.retryable) {
+          console.warn(`[Serial Bridge] Mengabaikan antrean karena error permanen: ${itemError.message}`);
+          queue = [];
+          persistQueue();
+          break;
+        }
+        throw itemError;
+      }
     }
   } catch (error) {
-    lastError = error instanceof Error ? error.message : "Gagal mengirim buffer.";
-    if (error instanceof DeliveryError && !error.retryable && queue.length > 0) {
-      queue.shift();
-      persistQueue();
-    }
+    console.error(`[Serial Bridge] Gagal mengirim antrean: ${error instanceof Error ? error.message : String(error)}`);
   } finally {
     flushing = false;
   }
@@ -261,8 +386,9 @@ async function handleFrame(frame) {
     await sendReading(payload);
     await flushQueue();
   } catch (error) {
-    lastError = error instanceof Error ? error.message : "Gagal mengirim pembacaan.";
-    if (!(error instanceof DeliveryError) || error.retryable) enqueue(payload);
+    if (error instanceof DeliveryError && error.retryable) {
+      enqueue(payload);
+    }
   }
   return { ok: true, ...payload };
 }
@@ -304,8 +430,8 @@ async function processFrame(frame) {
       console.warn(`[Serial Bridge] Frame ditolak: ${result.error}`);
     }
   } catch (error) {
-    lastError = error instanceof Error ? error.message : "Gagal memproses frame.";
-    console.error(`[Serial Bridge] ${lastError}`);
+    lastSerialError = error instanceof Error ? error.message : "Gagal memproses frame.";
+    console.error(`[Serial Bridge] ${lastSerialError}`);
   }
 }
 
@@ -344,12 +470,12 @@ async function disconnectSerial({ keepAutoConnect = false } = {}) {
 async function connectSerial() {
   if (connected || connecting || shuttingDown) return;
   if (!config.path) {
-    lastError = "Port serial belum dipilih.";
+    lastSerialError = "Port serial belum dipilih.";
     return;
   }
 
   connecting = true;
-  lastError = "";
+  lastSerialError = "";
   const candidate = new SerialPort({
     path: config.path,
     baudRate: Number(config.baudRate),
@@ -362,7 +488,7 @@ async function connectSerial() {
 
   candidate.on("data", consumeChunk);
   candidate.on("error", (error) => {
-    lastError = error.message;
+    lastSerialError = error.message;
   });
   candidate.on("close", () => {
     if (serialPort === candidate) serialPort = null;
@@ -376,7 +502,7 @@ async function connectSerial() {
     candidate.open((error) => {
       connecting = false;
       if (error) {
-        lastError = error.message;
+        lastSerialError = error.message;
         if (serialPort === candidate) serialPort = null;
         scheduleReconnect();
         resolve();
@@ -394,6 +520,10 @@ function publicConfig() {
   return { ...config };
 }
 
+function getCombinedError() {
+  return lastSerialError || lastIngestError || "";
+}
+
 function statusPayload() {
   return {
     ok: true,
@@ -405,8 +535,15 @@ function statusPayload() {
       connecting,
       lastConnectedAt,
       lastDisconnectedAt,
-      lastError,
+      lastError: getCombinedError(),
+      lastSerialError,
+      lastIngestError,
+      lastIngestStatus,
+      lastIngestAt,
       queueLength: queue.length,
+      ingestUrl,
+      deviceId,
+      hasApiKey: Boolean(ingestKey && ingestKey !== "serial-local-key-ganti-sebelum-produksi"),
     },
     config: publicConfig(),
     latest,
@@ -451,6 +588,10 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.method === "POST" && url.pathname === "/config") {
       const body = await readBody(request);
+      if (body.ingestUrl) ingestUrl = normalizeIngestUrl(body.ingestUrl);
+      if (body.deviceId) deviceId = String(body.deviceId).trim();
+      if (body.serialApiKey) ingestKey = String(body.serialApiKey).trim();
+
       const allowed = [
         "path", "interfaceType", "baudRate", "dataBits", "stopBits", "parity", "frameMode",
         "delimiter", "idleTimeoutMs", "weightRegex", "weightMultiplier", "stableRegex",
@@ -495,12 +636,42 @@ const server = http.createServer(async (request, response) => {
       const parsed = parseFrame(String(body.raw || ""));
       return sendJson(response, parsed.ok ? 200 : 422, { result: parsed, status: statusPayload() });
     }
+    if (request.method === "POST" && url.pathname === "/queue/clear") {
+      queue = [];
+      persistQueue();
+      return sendJson(response, 200, { ok: true, message: "Antrean berhasil dikosongkan.", queueLength: 0 });
+    }
+    if (request.method === "POST" && url.pathname === "/test-ingest") {
+      const testPayload = {
+        device_id: deviceId,
+        weight_kg: 0,
+        stable: true,
+        indicator_raw: "PING_TEST",
+        timestamp: new Date().toISOString(),
+        serial_port: config.path,
+        interface_type: config.interfaceType,
+      };
+      try {
+        await sendReading(testPayload);
+        return sendJson(response, 200, { ok: true, status: 200, message: "Koneksi ke server (Vercel) berhasil!" });
+      } catch (err) {
+        return sendJson(response, 200, {
+          ok: false,
+          status: lastIngestStatus,
+          error: lastIngestError || (err instanceof Error ? err.message : "Gagal terhubung ke server."),
+        });
+      }
+    }
 
     return sendJson(response, 404, { error: "Endpoint bridge tidak ditemukan." });
   } catch (error) {
-    lastError = error instanceof Error ? error.message : "Bridge error.";
-    return sendJson(response, 500, { error: lastError });
+    lastSerialError = error instanceof Error ? error.message : "Bridge error.";
+    return sendJson(response, 500, { error: getCombinedError() });
   }
+});
+
+server.on("error", (err) => {
+  console.error(`[Serial Bridge Server Error]`, err);
 });
 
 server.listen(bridgePort, bridgeHost, () => {

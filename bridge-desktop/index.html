@@ -1,1 +1,624 @@
-<!doctype html><html lang="id"><head><meta charset="utf-8"><title>TimbangQR Bridge</title><style>body{font:16px system-ui;margin:30px;background:#101827;color:#eef}input,select,button{padding:10px;margin:6px 0;width:100%;box-sizing:border-box}button{background:#05815a;color:white;border:0;border-radius:6px;font-weight:700}.card{max-width:620px;margin:auto;background:#19263b;padding:24px;border-radius:12px}small{color:#acc}pre{white-space:pre-wrap;background:#0b1320;padding:12px;border-radius:8px}</style></head><body><main class="card"><h1>TimbangQR Bridge</h1><p>Bridge berjalan otomatis di komputer operator. Konfigurasi ini hanya dilakukan saat pemasangan atau pergantian perangkat.</p><label>URL API TimbangQR<input id="url" placeholder="https://timbangqr.domain/api/serial/ingest"></label><label>ID Perangkat<input id="device"></label><label>Serial API Key<input id="serialKey" type="password" placeholder="isi bila perlu diganti"></label><label>Bridge Admin Key<input id="bridgeKey" type="password" placeholder="isi bila perlu diganti"></label><button id="save">Simpan konfigurasi</button><hr><label>COM Port<select id="port"></select></label><label>Baud rate<select id="baud"><option>9600</option><option>4800</option><option>1200</option></select></label><button id="refresh">Deteksi port</button><button id="connect">Hubungkan timbangan</button><button id="disconnect">Putuskan</button><h3>Status</h3><pre id="status">Memuat…</pre></main><script>const $=id=>document.getElementById(id);async function show(){ $('status').textContent=JSON.stringify(await window.bridge.status(),null,2)}async function ports(){let paths=['COM1'];try{let p=await window.bridge.ports();for(const item of p){let value=String(item.path||'').trim();if(value&&!paths.some(x=>x.toUpperCase()===value.toUpperCase()))paths.push(value)}}catch{}$('port').innerHTML=paths.map(path=>'<option>'+path+'</option>').join('');$('port').value='COM1'}async function init(){let c=await window.bridge.getConfig();$('url').value=c.ingestUrl;$('device').value=c.deviceId;await ports();await show()}$('save').onclick=async()=>{await window.bridge.saveConfig({ingestUrl:$('url').value.trim(),deviceId:$('device').value.trim(),serialApiKey:$('serialKey').value||undefined,bridgeAdminKey:$('bridgeKey').value||undefined});await show()};$('refresh').onclick=ports;$('connect').onclick=async()=>{await window.bridge.connect({path:$('port').value,baudRate:Number($('baud').value),dataBits:8,stopBits:1,parity:'none',interfaceType:'RS232',frameMode:'line',delimiter:'\\r\\n'});await show()};$('disconnect').onclick=async()=>{await window.bridge.disconnect();await show()};init();setInterval(show,3000);</script></body></html>
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <title>TimbangQR Bridge — Transdepo Harapan Jaya</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --bg: #0b1320;
+      --card-bg: #131f33;
+      --card-border: #233554;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --primary: #0ea5e9;
+      --primary-hover: #0284c7;
+      --success: #10b981;
+      --success-bg: rgba(16, 185, 129, 0.15);
+      --warning: #f59e0b;
+      --warning-bg: rgba(245, 158, 11, 0.15);
+      --danger: #ef4444;
+      --danger-bg: rgba(239, 68, 68, 0.15);
+      --font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 20px;
+      font-size: 14px;
+    }
+    .container {
+      max-width: 760px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--card-border);
+    }
+    header h1 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    header p {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .badge-green { background: var(--success-bg); color: var(--success); border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-yellow { background: var(--warning-bg); color: var(--warning); border: 1px solid rgba(245, 158, 11, 0.3); }
+    .badge-red { background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.3); }
+    .badge-gray { background: #334155; color: #cbd5e1; }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 16px;
+    }
+    .card-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .weight-hero {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin: 8px 0;
+    }
+    .weight-num {
+      font-size: 38px;
+      font-weight: 800;
+      color: #fff;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+    .weight-unit {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 5px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 13px;
+    }
+    .meta-row:last-child { border-bottom: none; }
+    .meta-label { color: var(--text-muted); }
+    .meta-val { font-weight: 600; }
+    .meta-val code {
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: #38bdf8;
+    }
+    .form-group {
+      margin-bottom: 12px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    input, select {
+      width: 100%;
+      padding: 9px 12px;
+      background: #0b1320;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus, select:focus {
+      border-color: var(--primary);
+    }
+    .help-text {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 3px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 9px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+    .btn-secondary { background: #1e3a5f; color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
+    .btn-secondary:hover:not(:disabled) { background: #254b7a; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-warning { background: var(--warning); color: #000; font-weight: 700; }
+    .btn-warning:hover:not(:disabled) { opacity: 0.9; }
+    .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--card-border); }
+    .btn-outline:hover:not(:disabled) { background: rgba(255, 255, 255, 0.05); }
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
+    .btn-group {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .alert {
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      margin-top: 10px;
+      line-height: 1.4;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .alert-danger { background: var(--danger-bg); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); }
+    .alert-success { background: var(--success-bg); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .alert-warning { background: var(--warning-bg); color: #fde68a; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .alert-info { background: rgba(14, 165, 233, 0.15); color: #7dd3fc; border: 1px solid rgba(14, 165, 233, 0.3); }
+    details {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 10px 14px;
+    }
+    summary {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+    pre {
+      margin-top: 10px;
+      padding: 10px;
+      background: #070d17;
+      border-radius: 6px;
+      font-size: 11px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      color: #94a3b8;
+      overflow-x: auto;
+      max-height: 180px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>⚖️ TimbangQR Bridge</h1>
+        <p>Transdepo Harapan Jaya — Integrasi Indikator Timbangan ke Cloud</p>
+      </div>
+      <span id="bridgeVersionBadge" class="badge badge-gray">v3.2.7</span>
+    </header>
+
+    <!-- LIVE MONITORING PANELS -->
+    <div class="grid">
+      <!-- PANEL 1: SERIAL PORT (SCALE) -->
+      <article class="card">
+        <div class="card-title">
+          <span>Indikator Timbangan (COM)</span>
+          <span id="serialBadge" class="badge badge-yellow">Memuat…</span>
+        </div>
+        <div class="weight-hero">
+          <span id="weightVal" class="weight-num">0</span>
+          <span class="weight-unit">kg</span>
+          <span id="stableBadge" class="badge badge-gray" style="margin-left: auto;">MENUNGGU</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Port Serial</span>
+          <span id="portDisplay" class="meta-val">COM1 @ 9600</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">String Mentah</span>
+          <span class="meta-val"><code id="rawString">-</code></span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Terakhir Diterima</span>
+          <span id="receivedAt" class="meta-val">-</span>
+        </div>
+      </article>
+
+      <!-- PANEL 2: CLOUD INGEST (VERCEL) -->
+      <article class="card">
+        <div class="card-title">
+          <span>Koneksi Cloud (Vercel)</span>
+          <span id="ingestBadge" class="badge badge-gray">Memuat…</span>
+        </div>
+        <div class="meta-row" style="margin-top: 4px;">
+          <span class="meta-label">Antrean Tertahan</span>
+          <span class="meta-val" id="queueInfo">
+            <strong id="queueCount">0</strong> data
+            <button id="clearQueueBtn" class="btn btn-warning btn-sm" style="display:none; margin-left: 8px;">Kosongkan</button>
+          </span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Status Terakhir</span>
+          <span id="ingestStatusText" class="meta-val">-</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Terakhir Terkirim</span>
+          <span id="ingestAt" class="meta-val">-</span>
+        </div>
+
+        <div id="ingestErrorBox" class="alert alert-danger" style="display:none;"></div>
+
+        <div style="margin-top: 10px;">
+          <button id="testIngestBtn" class="btn btn-secondary btn-sm" style="width: 100%;">
+            ⚡ Tes Koneksi ke Server (Vercel)
+          </button>
+          <div id="testResultBox" class="alert" style="display:none;"></div>
+        </div>
+      </article>
+    </div>
+
+    <!-- CONFIGURATION SECTION -->
+    <article class="card">
+      <div class="card-title">
+        <span>Konfigurasi Server & Perangkat</span>
+        <span id="apiKeyIndicator" class="badge badge-gray">Kunci belum dicek</span>
+      </div>
+      <div class="form-group">
+        <label for="url">URL API TimbangQR Ingest</label>
+        <input id="url" type="text" placeholder="https://timbangqr-harapan-jaya.vercel.app/api/serial/ingest">
+        <div class="help-text">Format otomatis dinormalisasi. Jika format markdown [url](url) dimasukkan, otomatis dibersihkan.</div>
+      </div>
+      <div class="grid" style="gap: 12px;">
+        <div class="form-group">
+          <label for="device">ID Perangkat Timbangan</label>
+          <input id="device" type="text" placeholder="TIMBANG-HJ-SERIAL-01">
+        </div>
+        <div class="form-group">
+          <label for="serialKey">Serial API Key</label>
+          <input id="serialKey" type="text" placeholder="serial-local-key-ganti-sebelum-produksi">
+          <div class="help-text">Otomatis terisi default sesuai server TimbangQR Vercel. Ubah jika ada kunci khusus.</div>
+        </div>
+      </div>
+      <div class="btn-group">
+        <button id="save" class="btn btn-primary">Simpan Konfigurasi</button>
+      </div>
+      <div id="saveFeedback" class="alert alert-success" style="display:none;"></div>
+    </article>
+
+    <!-- SERIAL PORT CONTROLS -->
+    <article class="card">
+      <div class="card-title">
+        <span>Pengaturan Port Serial (Sonic A28E / RS232)</span>
+      </div>
+      <div class="grid" style="gap: 12px;">
+        <div class="form-group">
+          <label for="port">COM Port</label>
+          <div style="display: flex; gap: 8px;">
+            <select id="port"></select>
+            <button id="refresh" class="btn btn-outline btn-sm" style="white-space: nowrap;">Deteksi Port</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="baud">Baud Rate</label>
+          <select id="baud">
+            <option value="9600" selected>9600 (Standar Sonic A28E)</option>
+            <option value="4800">4800</option>
+            <option value="2400">2400</option>
+            <option value="1200">1200</option>
+          </select>
+        </div>
+      </div>
+      <div class="btn-group">
+        <button id="connect" class="btn btn-primary">Hubungkan Timbangan</button>
+        <button id="disconnect" class="btn btn-outline">Putuskan</button>
+      </div>
+    </article>
+
+    <!-- DIAGNOSTICS LOG -->
+    <details>
+      <summary>Data Diagnostik Lengkap (JSON Bridge Health)</summary>
+      <pre id="status">Memuat status…</pre>
+    </details>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    function formatTime(iso) {
+      if (!iso) return '-';
+      try {
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return '-';
+        return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      } catch { return '-'; }
+    }
+
+    function cleanUrl(val) {
+      let url = String(val || '').trim();
+      const match = url.match(/\[([^\]]+)\]\(([^)]+)\)/);
+      if (match) url = match[2].trim();
+      else url = url.replace(/^[<[(]+|[>\])]+$/g, '').trim();
+      url = url.replace(/\/+$/, '');
+      if (url && !url.endsWith('/api/serial/ingest')) {
+        url += '/api/serial/ingest';
+      }
+      return url;
+    }
+
+    async function show() {
+      try {
+        const s = await window.bridge.status();
+        $('status').textContent = JSON.stringify(s, null, 2);
+
+        if (!s || !s.ok) {
+          $('serialBadge').textContent = 'Agent Off';
+          $('serialBadge').className = 'badge badge-red';
+          $('ingestBadge').textContent = 'Error';
+          $('ingestBadge').className = 'badge badge-red';
+          return;
+        }
+
+        const b = s.bridge || {};
+        const lat = s.latest || {};
+        const cfg = s.config || {};
+
+        // 1. Serial Scale Status
+        if (b.connected) {
+          $('serialBadge').textContent = 'Terhubung';
+          $('serialBadge').className = 'badge badge-green';
+        } else if (b.connecting) {
+          $('serialBadge').textContent = 'Menghubungkan…';
+          $('serialBadge').className = 'badge badge-yellow';
+        } else {
+          $('serialBadge').textContent = 'Terputus';
+          $('serialBadge').className = 'badge badge-red';
+        }
+
+        const weight = lat.weight_kg != null ? Number(lat.weight_kg) : 0;
+        $('weightVal').textContent = weight.toLocaleString('id-ID');
+        if (lat.stable) {
+          $('stableBadge').textContent = 'STABIL';
+          $('stableBadge').className = 'badge badge-green';
+        } else if (b.connected && lat.weight_kg != null) {
+          $('stableBadge').textContent = 'TIDAK STABIL';
+          $('stableBadge').className = 'badge badge-yellow';
+        } else {
+          $('stableBadge').textContent = 'MENUNGGU';
+          $('stableBadge').className = 'badge badge-gray';
+        }
+
+        $('portDisplay').textContent = (cfg.path || 'COM1') + ' @ ' + (cfg.baudRate || 9600) + ' baud';
+        $('rawString').textContent = lat.indicator_raw || lat.raw || '-';
+        $('receivedAt').textContent = formatTime(lat.receivedAt || lat.timestamp);
+
+        // 2. Ingest Cloud Status
+        const qLen = Number(b.queueLength || 0);
+        $('queueCount').textContent = qLen.toLocaleString('id-ID');
+        if (qLen > 0) {
+          $('clearQueueBtn').style.display = 'inline-block';
+        } else {
+          $('clearQueueBtn').style.display = 'none';
+        }
+
+        if (b.lastIngestStatus === 200) {
+          $('ingestBadge').textContent = 'Online (200)';
+          $('ingestBadge').className = 'badge badge-green';
+          $('ingestStatusText').textContent = 'Berhasil kirim ke Vercel';
+        } else if (b.lastIngestStatus === 401) {
+          $('ingestBadge').textContent = 'Gagal (401 Auth)';
+          $('ingestBadge').className = 'badge badge-red';
+          $('ingestStatusText').textContent = 'API Key Salah / Tidak Valid';
+        } else if (b.lastIngestStatus === 'network_error') {
+          $('ingestBadge').textContent = 'Offline';
+          $('ingestBadge').className = 'badge badge-red';
+          $('ingestStatusText').textContent = 'Gagal Menghubungi Server';
+        } else if (qLen > 0) {
+          $('ingestBadge').textContent = 'Tertahan (' + qLen + ')';
+          $('ingestBadge').className = 'badge badge-yellow';
+          $('ingestStatusText').textContent = 'Data dalam Antrean';
+        } else {
+          $('ingestBadge').textContent = 'Siap';
+          $('ingestBadge').className = 'badge badge-gray';
+          $('ingestStatusText').textContent = 'Menunggu Pembacaan';
+        }
+
+        $('ingestAt').textContent = formatTime(b.lastIngestAt);
+
+        // Ingest Error Box
+        if (b.lastIngestError) {
+          $('ingestErrorBox').style.display = 'flex';
+          $('ingestErrorBox').innerHTML = '⚠️ <strong>Masalah Ingest:</strong> ' + b.lastIngestError;
+        } else {
+          $('ingestErrorBox').style.display = 'none';
+        }
+
+      } catch (err) {
+        $('status').textContent = 'Gagal memuat status: ' + err.message;
+      }
+    }
+
+    async function ports() {
+      let paths = ['COM1'];
+      try {
+        let p = await window.bridge.ports();
+        for (const item of p) {
+          let value = String(item.path || '').trim();
+          if (value && !paths.some(x => x.toUpperCase() === value.toUpperCase())) {
+            paths.push(value);
+          }
+        }
+      } catch {}
+      const current = $('port').value;
+      $('port').innerHTML = paths.map(path => '<option value="' + path + '">' + path + '</option>').join('');
+      if (paths.includes(current)) $('port').value = current;
+      else $('port').value = 'COM1';
+    }
+
+    async function init() {
+      try {
+        const c = await window.bridge.getConfig();
+        $('url').value = cleanUrl(c.ingestUrl) || 'https://timbangqr-harapan-jaya.vercel.app/api/serial/ingest';
+        $('device').value = c.deviceId || 'TIMBANG-HJ-SERIAL-01';
+        $('serialKey').value = c.serialApiKey || 'serial-local-key-ganti-sebelum-produksi';
+
+        $('apiKeyIndicator').textContent = '✓ Serial Key Otomatis Terhubung';
+        $('apiKeyIndicator').className = 'badge badge-green';
+
+        await ports();
+        await show();
+      } catch (err) {
+        console.error('Init failed:', err);
+      }
+    }
+
+    $('url').onblur = () => {
+      $('url').value = cleanUrl($('url').value);
+    };
+
+    $('save').onclick = async () => {
+      const url = cleanUrl($('url').value);
+      $('url').value = url;
+      const deviceId = $('device').value.trim() || 'TIMBANG-HJ-SERIAL-01';
+      const serialApiKey = $('serialKey').value.trim() || 'serial-local-key-ganti-sebelum-produksi';
+
+      try {
+        $('save').disabled = true;
+        $('save').textContent = 'Menyimpan…';
+        await window.bridge.saveConfig({
+          ingestUrl: url,
+          deviceId: deviceId,
+          serialApiKey: serialApiKey,
+        });
+
+        $('saveFeedback').style.display = 'block';
+        $('saveFeedback').textContent = '✓ Konfigurasi berhasil disimpan! Agent dimuat ulang.';
+        setTimeout(() => { $('saveFeedback').style.display = 'none'; }, 4000);
+
+        $('apiKeyIndicator').textContent = '✓ Serial Key Otomatis Terhubung';
+        $('apiKeyIndicator').className = 'badge badge-green';
+
+        await show();
+      } catch (err) {
+        alert('Gagal menyimpan: ' + err.message);
+      } finally {
+        $('save').disabled = false;
+        $('save').textContent = 'Simpan Konfigurasi';
+      }
+    };
+
+    $('testIngestBtn').onclick = async () => {
+      const box = $('testResultBox');
+      const btn = $('testIngestBtn');
+      box.style.display = 'block';
+      box.className = 'alert alert-info';
+      box.textContent = '⏳ Menguji koneksi ke ' + ($('url').value || 'server') + '…';
+      btn.disabled = true;
+
+      try {
+        const res = await window.bridge.testIngest();
+        if (res.ok) {
+          box.className = 'alert alert-success';
+          box.textContent = '✓ BERHASIL: Koneksi ke server cloud (Vercel) normal dan menerima data! (HTTP 200)';
+        } else {
+          box.className = 'alert alert-danger';
+          if (res.status === 401) {
+            box.innerHTML = '❌ <strong>HTTP 401 Unauthorized:</strong> Serial API Key tidak cocok dengan database atau belum diisi. Masukkan Serial API Key yang valid lalu klik Simpan.';
+          } else {
+            box.innerHTML = '❌ <strong>Gagal:</strong> ' + (res.error || 'Server tidak merespons.');
+          }
+        }
+      } catch (err) {
+        box.className = 'alert alert-danger';
+        box.textContent = '❌ Gagal melakukan pengujian: ' + err.message;
+      } finally {
+        btn.disabled = false;
+        await show();
+      }
+    };
+
+    $('clearQueueBtn').onclick = async () => {
+      if (!confirm('Yakin ingin mengosongkan antrean data yang tertahan?')) return;
+      try {
+        await window.bridge.clearQueue();
+        await show();
+      } catch (err) {
+        alert('Gagal mengosongkan antrean: ' + err.message);
+      }
+    };
+
+    $('refresh').onclick = ports;
+
+    $('connect').onclick = async () => {
+      try {
+        $('connect').disabled = true;
+        await window.bridge.connect({
+          path: $('port').value,
+          baudRate: Number($('baud').value),
+          dataBits: 8,
+          stopBits: 1,
+          parity: 'none',
+          interfaceType: 'RS232',
+          frameMode: 'line',
+          delimiter: '\\r\\n',
+        });
+        await show();
+      } catch (err) {
+        alert('Gagal menghubungkan: ' + err.message);
+      } finally {
+        $('connect').disabled = false;
+      }
+    };
+
+    $('disconnect').onclick = async () => {
+      try {
+        await window.bridge.disconnect();
+        await show();
+      } catch (err) {
+        alert('Gagal memutuskan: ' + err.message);
+      }
+    };
+
+    init();
+    setInterval(show, 2000);
+  </script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 {
   "name": "jembatan-timbang-qr-postgresql",
-  "version": "3.2.4",
+  "version": "3.2.7",
   "private": true,
   "description": "Sistem jembatan timbang QR dengan PostgreSQL native dan Serial Agent RS232/RS485 tanpa Docker",
   "scripts": {
@@ -19,7 +19,8 @@
     "serial:agent": "node serial-agent/server.mjs",
     "migrate:sqlite": "tsx scripts/import-sqlite-export.ts",
     "bridge:dev": "electron bridge-desktop/main.cjs",
-    "bridge:build": "electron-builder --win nsis --publish never"
+    "bridge:build": "electron-builder --win nsis --ia32 --publish never",
+    "bridge:build:win7-32": "electron-builder --win nsis --ia32 --publish never"
   },
   "dependencies": {
     "@zxing/browser": "0.1.5",
@@ -32,7 +33,7 @@
     "qrcode": "1.5.4",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "serialport": "^13.0.0",
+    "serialport": "^12.0.0",
     "zod": "4.1.12"
   },
   "devDependencies": {
@@ -45,8 +46,8 @@
     "eslint-config-next": "16.3.0",
     "tsx": "4.20.6",
     "typescript": "5.9.3",
-    "electron": "^35.0.0",
-    "electron-builder": "^26.0.12"
+    "electron": "22.3.27",
+    "electron-builder": "^24.13.3"
   },
   "engines": {
     "node": ">=22 <27"
@@ -60,6 +61,7 @@
     "appId": "id.timbangqr.bridge",
     "productName": "TimbangQR Bridge",
     "asar": false,
+    "npmRebuild": false,
     "files": [
       "bridge-desktop/**/*",
       "serial-agent/**/*",
@@ -67,9 +69,14 @@
     ],
     "win": {
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "ia32"
+          ]
+        }
       ],
-      "artifactName": "TimbangQR-Bridge-Setup-${version}.${ext}"
+      "artifactName": "TimbangQR-Bridge-Setup-win7-32bit-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,

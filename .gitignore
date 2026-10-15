@@ -17,3 +17,6 @@ backups/
 .DS_Store
 .vercel/
 dist/
+installer/
+*.exe
+

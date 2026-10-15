@@ -52,13 +52,20 @@ export default function RemoteSerialStatusPanel() {
     };
   }, [refresh]);
 
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 5000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const lastSeen = reading?.recorded_at || null;
   const isFresh = useMemo(() => {
     if (!lastSeen) return false;
     const timestamp = Date.parse(lastSeen);
     if (Number.isNaN(timestamp)) return false;
-    return Date.now() - timestamp <= 90_000;
-  }, [lastSeen]);
+    return now - timestamp <= 90_000;
+  }, [lastSeen, now]);
 
   const weight = reading?.weight_kg;
   const raw = reading?.indicator_raw || "-";
