@@ -8,20 +8,30 @@ on:
       - "bridge-desktop/**"
       - "serial-agent/**"
       - "package.json"
+      - "package-lock.json"
+      - "scripts/smoke-serial-agent.test.mjs"
       - ".github/workflows/build-windows-bridge.yml"
 
 jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
-      - run: npm install
+      - run: npm ci
       - name: Validate Bridge JavaScript syntax
-        run: node --check bridge-desktop/main.cjs
+        run: |
+          node --check bridge-desktop/main.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check bridge-desktop/preload.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check serial-agent/server.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Smoke test Serial Agent without hardware
+        run: node --test scripts/smoke-serial-agent.test.mjs
       - run: npm run bridge:build
       - name: Smoke test packaged Windows Bridge
         shell: pwsh
@@ -31,20 +41,36 @@ jobs:
             $app = Join-Path $PWD "dist\win-unpacked\TimbangQR Bridge.exe"
           }
           if (!(Test-Path $app)) { throw "Executable hasil packaging tidak ditemukan pada dist\win-ia32-unpacked maupun dist\win-unpacked." }
-          $process = Start-Process -FilePath $app -PassThru
-          $headers = @{ "x-bridge-key" = "bridge-admin-key-ganti-sebelum-produksi" }
-          $ready = $false
-          for ($attempt = 0; $attempt -lt 30; $attempt++) {
-            Start-Sleep -Milliseconds 500
-            if ($process.HasExited) { throw "TimbangQR Bridge berhenti saat smoke test." }
-            try {
-              $health = Invoke-RestMethod -Uri "http://127.0.0.1:8787/health" -Headers $headers -TimeoutSec 2
-              if ($health.ok) { $ready = $true; break }
-            } catch {}
+          $bridgeProcess = $null
+          try {
+            $bridgeProcess = Start-Process -FilePath $app -PassThru
+            $headers = @{ "x-bridge-key" = "bridge-admin-key-ganti-sebelum-produksi" }
+            $ready = $false
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              Start-Sleep -Milliseconds 500
+              $bridgeProcess.Refresh()
+              if ($bridgeProcess.HasExited) { throw "TimbangQR Bridge berhenti saat smoke test (exit=$($bridgeProcess.ExitCode))." }
+              try {
+                $health = Invoke-RestMethod -Uri "http://127.0.0.1:8787/health" -Headers $headers -TimeoutSec 2
+                if ($health.ok -and $health.bridge.deviceId -eq "TIMBANG-HJ-SERIAL-01") { $ready = $true; break }
+              } catch {}
+            }
+            if (!$ready) { throw "Serial Agent bawaan tidak aktif pada port 8787." }
+            $ports = Invoke-RestMethod -Uri "http://127.0.0.1:8787/ports" -Headers $headers -TimeoutSec 5
+            if ($null -eq $ports.ports) { throw "Serial Agent tidak mengembalikan daftar port." }
+            $parsed = Invoke-RestMethod -Uri "http://127.0.0.1:8787/test-input" -Method Post -Headers $headers -ContentType "application/json" -Body '{"raw":"ST 1250 kg"}' -TimeoutSec 5
+            if (!$parsed.result.ok -or $parsed.result.weightKg -ne 1250 -or !$parsed.result.stable) {
+              throw "Parser pada paket Windows tidak menghasilkan berat stabil 1250 kg."
+            }
+          } finally {
+            if ($null -ne $bridgeProcess) {
+              $bridgeProcess.Refresh()
+              if (!$bridgeProcess.HasExited) {
+                taskkill /PID $bridgeProcess.Id /T /F
+              }
+            }
           }
-          if (!$ready) { throw "Serial Agent bawaan tidak aktif pada port 8787." }
-          taskkill /PID $process.Id /T /F
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: TimbangQR-Bridge-Windows
           path: dist/TimbangQR-Bridge-Setup-*.exe
