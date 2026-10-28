@@ -304,7 +304,7 @@
       </div>
       <div class="form-group">
         <label for="url">URL API TimbangQR Ingest</label>
-        <input id="url" type="text" placeholder="https://timbangqr-harapan-jaya.vercel.app/api/serial/ingest">
+        <input id="url" type="text" placeholder="https://timbangqr-ocr-led-rose.vercel.app/api/serial/ingest">
         <div class="help-text">Format otomatis dinormalisasi. Jika format markdown [url](url) dimasukkan, otomatis dibersihkan.</div>
       </div>
       <div class="grid" style="gap: 12px;">
@@ -378,6 +378,9 @@
       if (match) url = match[2].trim();
       else url = url.replace(/^[<[(]+|[>\])]+$/g, '').trim();
       url = url.replace(/\/+$/, '');
+      if (url.includes('timbangqr-harapan-jaya.vercel.app')) {
+        url = url.replace('timbangqr-harapan-jaya.vercel.app', 'timbangqr-ocr-led-rose.vercel.app');
+      }
       if (url && !url.endsWith('/api/serial/ingest')) {
         url += '/api/serial/ingest';
       }
@@ -496,7 +499,7 @@
     async function init() {
       try {
         const c = await window.bridge.getConfig();
-        $('url').value = cleanUrl(c.ingestUrl) || 'https://timbangqr-harapan-jaya.vercel.app/api/serial/ingest';
+        $('url').value = cleanUrl(c.ingestUrl) || 'https://timbangqr-ocr-led-rose.vercel.app/api/serial/ingest';
         $('device').value = c.deviceId || 'TIMBANG-HJ-SERIAL-01';
         $('serialKey').value = c.serialApiKey || 'serial-local-key-ganti-sebelum-produksi';
 

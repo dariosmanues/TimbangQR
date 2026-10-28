@@ -5,7 +5,7 @@ Bridge menggantikan perintah developer `npm run serial:agent`. Setelah installer
 ## Yang operator lakukan
 
 1. Buka TimbangQR Bridge.
-2. Isi URL API TimbangQR yang disediakan administrator, ID perangkat, dan credential perangkat.
+2. Isi URL API TimbangQR (`https://timbangqr-ocr-led-rose.vercel.app/api/serial/ingest`), ID perangkat (`TIMBANG-HJ-SERIAL-01`), dan credential perangkat (`SERIAL_API_KEY`).
 3. Klik **Deteksi port**, pilih COM port indikator, lalu **Hubungkan timbangan**.
 4. Tutup jendela bila selesai. Bridge terus berjalan melalui system tray.
 

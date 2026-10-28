@@ -28,6 +28,21 @@ Jangan menganggap konektor DB9 selalu RS232 atau selalu memakai pin 2, 3, dan 5 
 - Contoh string keluaran ketika stabil dan tidak stabil.
 - Satuan keluaran: kg, gram, atau ton.
 
+## Parameter Koneksi ke Bridge & Cloud (`https://timbangqr-ocr-led-rose.vercel.app/`)
+
+| Parameter | Nilai Standar / Contoh | Keterangan |
+| :--- | :--- | :--- |
+| **URL API Ingest (`SERIAL_INGEST_URL`)** | `https://timbangqr-ocr-led-rose.vercel.app/api/serial/ingest` | Otomatis dinormalisasi bila diisi `https://timbangqr-ocr-led-rose.vercel.app/` |
+| **ID Perangkat (`SERIAL_DEVICE_ID`)** | `TIMBANG-HJ-SERIAL-01` | Harus sama dengan `device_code` pada tabel `weighbridge_devices` di PostgreSQL |
+| **Serial API Key (`SERIAL_API_KEY`)** | Sesuai nilai `SERIAL_API_KEY` di server / database (default: `serial-local-key-ganti-sebelum-produksi`) | Dikirim melalui header `x-serial-key` |
+| **Bridge Lokal (`SERIAL_BRIDGE_HOST:PORT`)** | `127.0.0.1:8787` | Hanya diakses lokal di PC operator |
+| **Bridge Admin Key (`SERIAL_BRIDGE_ADMIN_KEY`)** | `bridge-admin-key-ganti-sebelum-produksi` | Header `x-bridge-key` antara aplikasi desktop & Serial Agent lokal |
+| **COM Port (`SERIAL_PORT`)** | `COM1` / `COM3` (sesuai Device Manager) | Port adapter USB–RS232 / USB–RS485 |
+| **Antarmuka (`SERIAL_INTERFACE`)** | `RS232` (atau `RS485`) | Jenis koneksi fisik indikator |
+| **Parameter Serial** | Baud `9600`, Data `8` bit, Parity `none`, Stop `1` bit | Standar indikator Sonic A28E (sesuaikan manual bila berbeda) |
+| **Mode Frame & Delimiter** | `line` dengan delimiter `\r\n` (atau `idle` `120` ms) | Pemisah antar paket data indikator |
+| **Parser Berat & Stabilitas** | Weight regex `[-+]?\d+(?:[.,]\d+)?`, Pengali `1`, Stable regex `\b(ST\|STAB\|STABLE)\b`, Unstable regex `\b(US\|UNST\|UNSTABLE)\b`, Sampel `3`, Toleransi `1` kg | Filter angka berat dan status stabil |
+
 ## Langkah Windows
 
 1. Pasang driver adapter USB serial.

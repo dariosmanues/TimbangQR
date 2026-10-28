@@ -17,7 +17,7 @@ let agentLogPath = "";
 let agentStartError = "";
 let operatorConfig = {};
 const bridgeUrl = "http://127.0.0.1:8787";
-const defaultIngestUrl = "https://timbangqr-harapan-jaya.vercel.app/api/serial/ingest";
+const defaultIngestUrl = "https://timbangqr-ocr-led-rose.vercel.app/api/serial/ingest";
 const defaultDeviceId = "TIMBANG-HJ-SERIAL-01";
 const defaultSerialApiKey = "serial-local-key-ganti-sebelum-produksi";
 const defaultBridgeAdminKey = "bridge-admin-key-ganti-sebelum-produksi";
@@ -34,6 +34,9 @@ function normalizeIngestUrl(raw) {
   if (!url) return "";
   if (url.startsWith("http://") && url.includes(".vercel.app")) {
     url = "https://" + url.slice(7);
+  }
+  if (url.includes("timbangqr-harapan-jaya.vercel.app")) {
+    url = url.replace("timbangqr-harapan-jaya.vercel.app", "timbangqr-ocr-led-rose.vercel.app");
   }
   if (!url.endsWith("/api/serial/ingest")) {
     url += "/api/serial/ingest";
@@ -60,6 +63,7 @@ function loadConfig() {
       serialApiKey: defaultSerialApiKey,
       bridgeAdminKey: defaultBridgeAdminKey,
       ...saved,
+      ingestUrl: normalizeIngestUrl(saved.ingestUrl || defaultIngestUrl) || defaultIngestUrl,
       serialApiKey: decrypt(saved.serialApiKey) || defaultSerialApiKey,
       bridgeAdminKey: decrypt(saved.bridgeAdminKey) || defaultBridgeAdminKey,
     };
