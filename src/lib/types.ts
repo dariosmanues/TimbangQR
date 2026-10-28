@@ -1,4 +1,4 @@
-export type SessionUser = {
+﻿export type SessionUser = {
   id: number;
   email: string;
   name: string;
@@ -62,6 +62,8 @@ export type WeighingRow = {
   plate_number: string;
   driver_name: string | null;
   lps_name: string;
+  vehicle_type?: string;
+  waste_type?: string;
   gross_kg: number;
   tare_kg: number;
   netto_1_kg: number;

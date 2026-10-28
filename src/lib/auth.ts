@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+﻿import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SignJWT, jwtVerify } from "jose";
 import type { SessionUser } from "./types";
@@ -8,6 +8,12 @@ const COOKIE_NAME = "timbang_session";
 function secretKey() {
   const raw = (process.env.JWT_SECRET || "dev-only-change-this-jwt-secret-minimum-32").trim();
   return new TextEncoder().encode(raw);
+}
+
+export function isSuperAdmin(user?: SessionUser | null): boolean {
+  if (!user) return false;
+  const role = String(user.role || "").toUpperCase();
+  return role === "SUPER_ADMIN" || role === "SUPERADMIN" || role === "ADMIN";
 }
 
 export async function setSession(user: SessionUser) {
