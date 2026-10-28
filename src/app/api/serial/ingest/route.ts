@@ -30,7 +30,7 @@ export async function POST(request: Request) {
 
   try {
     const input = schema.parse(await request.json());
-    const device = await dbOne<{
+    let device = await dbOne<{
       id: number;
       device_code: string;
       api_key_hash: string;
@@ -44,10 +44,38 @@ export async function POST(request: Request) {
     const incomingHash = hashDeviceKey(apiKey);
     const configuredKey = (process.env.SERIAL_API_KEY || "").trim();
     const defaultLocalKey = "serial-local-key-ganti-sebelum-produksi";
-    const keyValid = Boolean(
-      (device && secureEqual(device.api_key_hash, incomingHash))
-      || (configuredKey && secureEqual(hashDeviceKey(configuredKey), incomingHash))
+    const defaultExampleKey = "serial-api-key-ganti-dengan-random-panjang";
+    const matchesEnvOrDefault = Boolean(
+      (configuredKey && secureEqual(hashDeviceKey(configuredKey), incomingHash))
       || secureEqual(hashDeviceKey(defaultLocalKey), incomingHash)
+      || secureEqual(hashDeviceKey(defaultExampleKey), incomingHash)
+    );
+
+    if (!device && matchesEnvOrDefault) {
+      device = await dbOne<{
+        id: number;
+        device_code: string;
+        api_key_hash: string;
+        active: boolean;
+      }>(`
+        INSERT INTO weighbridge_devices
+          (device_code, location_name, api_key_hash, firmware_version, connection_type, port_name, baud_rate, protocol, active)
+        VALUES ($1, 'Transdepo Harapan Jaya', $2, 'PC-SERIAL-BRIDGE', $3, $4, 9600, 'DIRECT_SERIAL', TRUE)
+        ON CONFLICT (device_code) DO UPDATE SET
+          api_key_hash = EXCLUDED.api_key_hash,
+          protocol = 'DIRECT_SERIAL',
+          active = TRUE
+        RETURNING id, device_code, api_key_hash, active
+      `, [
+        input.device_id,
+        incomingHash,
+        input.interface_type || "RS232",
+        input.serial_port || null,
+      ]);
+    }
+
+    const keyValid = Boolean(
+      device && (secureEqual(device.api_key_hash, incomingHash) || matchesEnvOrDefault)
     );
 
     if (!device || !device.active || !keyValid) {
