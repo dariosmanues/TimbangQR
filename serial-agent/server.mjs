@@ -694,7 +694,31 @@ server.listen(bridgePort, bridgeHost, () => {
   if (config.autoConnect) void connectSerial();
 });
 
+async function sendHeartbeat() {
+  if (shuttingDown || !ingestUrl) return;
+  try {
+    await sendReading({
+      device_id: deviceId,
+      weight_kg: 0,
+      stable: true,
+      indicator_raw: "PING_TEST",
+      dry_run: true,
+      timestamp: new Date().toISOString(),
+      serial_port: config.path,
+      interface_type: config.interfaceType,
+    });
+  } catch {
+    // Heartbeat error already recorded in lastIngestStatus / lastIngestError
+  }
+}
+
+setTimeout(() => void sendHeartbeat(), 500).unref();
 setInterval(() => void flushQueue(), 2000).unref();
+setInterval(() => {
+  if (!lastIngestAt || Date.now() - Date.parse(lastIngestAt) >= 55_000) {
+    void sendHeartbeat();
+  }
+}, 60_000).unref();
 
 async function shutdown() {
   shuttingDown = true;

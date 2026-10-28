@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { dbOne, hashDeviceKey, withTransaction } from "@/lib/db";
+import { dbOne, dbQuery, hashDeviceKey, withTransaction } from "@/lib/db";
 
 export const runtime = "nodejs";
 const schema = z.object({
@@ -59,12 +59,13 @@ export async function POST(request: Request) {
         active: boolean;
       }>(`
         INSERT INTO weighbridge_devices
-          (device_code, location_name, api_key_hash, firmware_version, connection_type, port_name, baud_rate, protocol, active)
-        VALUES ($1, 'Transdepo Harapan Jaya', $2, 'PC-SERIAL-BRIDGE', $3, $4, 9600, 'DIRECT_SERIAL', TRUE)
+          (device_code, location_name, api_key_hash, firmware_version, connection_type, port_name, baud_rate, protocol, active, last_seen_at)
+        VALUES ($1, 'Transdepo Harapan Jaya', $2, 'PC-SERIAL-BRIDGE', $3, $4, 9600, 'DIRECT_SERIAL', TRUE, NOW())
         ON CONFLICT (device_code) DO UPDATE SET
           api_key_hash = EXCLUDED.api_key_hash,
           protocol = 'DIRECT_SERIAL',
-          active = TRUE
+          active = TRUE,
+          last_seen_at = NOW()
         RETURNING id, device_code, api_key_hash, active
       `, [
         input.device_id,
@@ -88,21 +89,32 @@ export async function POST(request: Request) {
 
     const isDryRun = input.dry_run || input.indicator_raw === "PING_TEST";
     if (isDryRun) {
+      await dbQuery(`
+        UPDATE weighbridge_devices
+        SET last_seen_at = NOW(),
+            firmware_version = 'PC-SERIAL-BRIDGE',
+            port_name = COALESCE($1, port_name),
+            connection_type = COALESCE($2, connection_type),
+            active = TRUE
+        WHERE id = $3
+      `, [input.serial_port || null, input.interface_type || null, device.id]);
+
       return NextResponse.json({
         ok: true,
         dry_run: true,
         device_code: device.device_code,
-        message: "Autentikasi dan koneksi berhasil. Data tes tidak mempengaruhi status pembacaan timbangan.",
+        message: "Autentikasi dan koneksi berhasil. Status TimbangQR Bridge aktif di server.",
       });
     }
 
     const latest = await dbOne<{
+      id: number;
       weight_kg: number;
       stable: boolean;
       indicator_raw: string | null;
       recorded_at: string;
     }>(`
-      SELECT weight_kg, stable, indicator_raw, recorded_at
+      SELECT id, weight_kg, stable, indicator_raw, recorded_at
       FROM device_readings
       WHERE device_id = $1
       ORDER BY id DESC
@@ -116,6 +128,13 @@ export async function POST(request: Request) {
       && latest.indicator_raw === (input.indicator_raw || null)
       && Math.abs(Date.parse(recordedAt) - Date.parse(latest.recorded_at)) < 500
     ) {
+      await dbQuery(`
+        UPDATE weighbridge_devices
+        SET last_seen_at = NOW(),
+            port_name = COALESCE($1, port_name),
+            connection_type = COALESCE($2, connection_type)
+        WHERE id = $3
+      `, [input.serial_port || null, input.interface_type || null, device.id]);
       return NextResponse.json({ ok: true, duplicate: true });
     }
 
@@ -130,7 +149,8 @@ export async function POST(request: Request) {
         UPDATE weighbridge_devices
         SET last_seen_at = GREATEST(
               COALESCE(last_seen_at, $1::timestamptz),
-              $1::timestamptz
+              $1::timestamptz,
+              NOW()
             ),
             firmware_version = 'PC-SERIAL-BRIDGE',
             port_name = COALESCE($2, port_name),
