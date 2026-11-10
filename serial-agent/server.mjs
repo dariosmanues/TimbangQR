@@ -702,7 +702,7 @@ server.listen(bridgePort, bridgeHost, () => {
 });
 
 async function sendHeartbeat() {
-  if (shuttingDown || !ingestUrl) return;
+  if (shuttingDown || !ingestUrl || !config.autoConnect) return;
   try {
     await sendReading({
       device_id: deviceId,
