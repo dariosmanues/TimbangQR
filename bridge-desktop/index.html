@@ -324,9 +324,14 @@
           <input id="device" type="text" placeholder="TIMBANG-HJ-SERIAL-01">
         </div>
         <div class="form-group">
-          <label for="serialKey">Serial API Key</label>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label for="serialKey" style="margin-bottom: 0;">Serial API Key</label>
+            <button type="button" id="btnAutoKey" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 11px;">
+              ⚡ Isi Otomatis Default
+            </button>
+          </div>
           <input id="serialKey" type="text" placeholder="serial-local-key-ganti-sebelum-produksi">
-          <div class="help-text">Otomatis terisi default sesuai server TimbangQR.</div>
+          <div class="help-text">Otomatis terisi default sesuai server TimbangQR. Operator tidak perlu mengetik manual.</div>
         </div>
       </div>
       <div class="btn-group">
@@ -510,14 +515,16 @@
       else $('port').value = 'COM1';
     }
 
+    const DEFAULT_KEY = 'serial-local-key-ganti-sebelum-produksi';
+
     async function init() {
       try {
         const c = await window.bridge.getConfig();
         $('url').value = cleanUrl(c.ingestUrl) || 'https://airhitam-177-202-246-42.sslip.io/api/serial/ingest';
-        $('device').value = c.deviceId || 'TIMBANG-HJ-SERIAL-01';
-        $('serialKey').value = c.serialApiKey || 'serial-local-key-ganti-sebelum-produksi';
+        $('device').value = (c.deviceId && c.deviceId.trim()) ? c.deviceId.trim() : 'TIMBANG-HJ-SERIAL-01';
+        $('serialKey').value = (c.serialApiKey && c.serialApiKey.trim()) ? c.serialApiKey.trim() : DEFAULT_KEY;
 
-        $('apiKeyIndicator').textContent = '✓ Serial Key Otomatis Terhubung';
+        $('apiKeyIndicator').textContent = '✓ Serial Key Otomatis Terisi';
         $('apiKeyIndicator').className = 'badge badge-green';
 
         await ports();
@@ -527,12 +534,28 @@
       }
     }
 
+    $('btnAutoKey').onclick = () => {
+      $('serialKey').value = DEFAULT_KEY;
+      $('apiKeyIndicator').textContent = '✓ Serial Key Otomatis Terisi';
+      $('apiKeyIndicator').className = 'badge badge-green';
+    };
+
+    $('serialKey').onblur = () => {
+      if (!$('serialKey').value.trim()) {
+        $('serialKey').value = DEFAULT_KEY;
+      }
+    };
+
     $('presetAirHitam').onclick = () => {
       $('url').value = 'https://airhitam-177-202-246-42.sslip.io/api/serial/ingest';
+      if (!$('serialKey').value.trim()) $('serialKey').value = DEFAULT_KEY;
+      if (!$('device').value.trim()) $('device').value = 'TIMBANG-HJ-SERIAL-01';
     };
 
     $('presetHarapanJaya').onclick = () => {
       $('url').value = 'https://timbangqr-ocr-led-rose.vercel.app/api/serial/ingest';
+      if (!$('serialKey').value.trim()) $('serialKey').value = DEFAULT_KEY;
+      if (!$('device').value.trim()) $('device').value = 'TIMBANG-HJ-SERIAL-01';
     };
 
     $('url').onblur = () => {
@@ -543,7 +566,8 @@
       const url = cleanUrl($('url').value);
       $('url').value = url;
       const deviceId = $('device').value.trim() || 'TIMBANG-HJ-SERIAL-01';
-      const serialApiKey = $('serialKey').value.trim() || 'serial-local-key-ganti-sebelum-produksi';
+      const serialApiKey = $('serialKey').value.trim() || DEFAULT_KEY;
+      $('serialKey').value = serialApiKey;
 
       try {
         $('save').disabled = true;
@@ -558,7 +582,7 @@
         $('saveFeedback').textContent = '✓ Konfigurasi berhasil disimpan! Agent dimuat ulang.';
         setTimeout(() => { $('saveFeedback').style.display = 'none'; }, 4000);
 
-        $('apiKeyIndicator').textContent = '✓ Serial Key Otomatis Terhubung';
+        $('apiKeyIndicator').textContent = '✓ Serial Key Otomatis Terisi';
         $('apiKeyIndicator').className = 'badge badge-green';
 
         await show();

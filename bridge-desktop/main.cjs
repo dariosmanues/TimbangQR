@@ -58,6 +58,7 @@ function loadConfig() {
       } catch {}
       return "";
     };
+    const decryptedKey = decrypt(saved.serialApiKey);
     return {
       ingestUrl: defaultIngestUrl,
       deviceId: defaultDeviceId,
@@ -65,7 +66,8 @@ function loadConfig() {
       bridgeAdminKey: defaultBridgeAdminKey,
       ...saved,
       ingestUrl: normalizeIngestUrl(saved.ingestUrl || defaultIngestUrl) || defaultIngestUrl,
-      serialApiKey: decrypt(saved.serialApiKey) || defaultSerialApiKey,
+      deviceId: (saved.deviceId && String(saved.deviceId).trim()) || defaultDeviceId,
+      serialApiKey: (decryptedKey && decryptedKey.trim()) || defaultSerialApiKey,
       bridgeAdminKey: decrypt(saved.bridgeAdminKey) || defaultBridgeAdminKey,
     };
   } catch {
@@ -81,6 +83,12 @@ function saveConfig(next) {
   const definedValues = Object.fromEntries(Object.entries(next).filter(([, value]) => value !== undefined));
   if (definedValues.ingestUrl) {
     definedValues.ingestUrl = normalizeIngestUrl(definedValues.ingestUrl);
+  }
+  if (!definedValues.serialApiKey || !String(definedValues.serialApiKey).trim()) {
+    definedValues.serialApiKey = defaultSerialApiKey;
+  }
+  if (!definedValues.deviceId || !String(definedValues.deviceId).trim()) {
+    definedValues.deviceId = defaultDeviceId;
   }
   operatorConfig = { ...operatorConfig, ...definedValues };
   const stored = { ...operatorConfig };
@@ -318,9 +326,9 @@ app.on("before-quit", () => { app.isQuiting = true; agent?.kill(); });
 
 ipcMain.handle("bridge:get-config", () => ({
   ingestUrl: operatorConfig.ingestUrl || defaultIngestUrl,
-  deviceId: operatorConfig.deviceId || defaultDeviceId,
-  serialApiKey: operatorConfig.serialApiKey || defaultSerialApiKey,
-  hasSerialApiKey: Boolean(operatorConfig.serialApiKey || defaultSerialApiKey),
+  deviceId: (operatorConfig.deviceId && operatorConfig.deviceId.trim()) || defaultDeviceId,
+  serialApiKey: (operatorConfig.serialApiKey && operatorConfig.serialApiKey.trim()) || defaultSerialApiKey,
+  hasSerialApiKey: true,
   hasBridgeAdminKey: Boolean(operatorConfig.bridgeAdminKey || defaultBridgeAdminKey),
 }));
 ipcMain.handle("bridge:save-config", async (_event, values) => {
