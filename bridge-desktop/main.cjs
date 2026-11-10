@@ -17,7 +17,7 @@ let agentLogPath = "";
 let agentStartError = "";
 let operatorConfig = {};
 const bridgeUrl = "http://127.0.0.1:8787";
-const defaultIngestUrl = "https://timbangqr-ocr-led-rose.vercel.app/api/serial/ingest";
+const defaultIngestUrl = "https://airhitam-177-202-246-42.sslip.io/api/serial/ingest";
 const defaultDeviceId = "TIMBANG-HJ-SERIAL-01";
 const defaultSerialApiKey = "serial-local-key-ganti-sebelum-produksi";
 const defaultBridgeAdminKey = "bridge-admin-key-ganti-sebelum-produksi";
@@ -31,13 +31,14 @@ function normalizeIngestUrl(raw) {
     url = url.replace(/^[<[(]+|[>\])]+$/g, "").trim();
   }
   url = url.replace(/\/+$/, "");
-  if (!url) return "";
-  if (url.startsWith("http://") && url.includes(".vercel.app")) {
+  if (!url || url === "http://127.0.0.1:3000/api/serial/ingest") return defaultIngestUrl;
+  if (url.startsWith("http://") && (url.includes(".vercel.app") || url.includes(".sslip.io"))) {
     url = "https://" + url.slice(7);
   }
-  if (url.includes("timbangqr-harapan-jaya.vercel.app")) {
-    url = url.replace("timbangqr-harapan-jaya.vercel.app", "timbangqr-ocr-led-rose.vercel.app");
+  if (url.includes("timbangqr-airhitam-brown.vercel.app") || url.includes("timbangqr-harapan-jaya.vercel.app")) {
+    url = defaultIngestUrl;
   }
+  url = url.replace(/\/(scan|perangkat|dashboard|transaksi|login)(\/.*)?$/i, "");
   if (!url.endsWith("/api/serial/ingest")) {
     url += "/api/serial/ingest";
   }
@@ -278,7 +279,7 @@ async function status() {
 function showWindow() {
   if (!windowRef) {
     windowRef = new BrowserWindow({
-      width: 760, height: 650, show: false,
+      width: 760, height: 670, show: false,
       webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false },
     });
     windowRef.loadFile(path.join(__dirname, "index.html"));

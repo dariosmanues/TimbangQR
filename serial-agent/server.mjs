@@ -60,6 +60,13 @@ function normalizeIngestUrl(raw) {
   if (url.includes("timbangqr-harapan-jaya.vercel.app")) {
     url = url.replace("timbangqr-harapan-jaya.vercel.app", "timbangqr-ocr-led-rose.vercel.app");
   }
+  if (url.startsWith("http://") && (url.includes(".vercel.app") || url.includes(".sslip.io"))) {
+    url = "https://" + url.slice(7);
+  }
+  if (url.includes("timbangqr-airhitam-brown.vercel.app") || url.includes("timbangqr-harapan-jaya.vercel.app")) {
+    url = "https://airhitam-177-202-246-42.sslip.io/api/serial/ingest";
+  }
+  url = url.replace(/\/(scan|perangkat|dashboard|transaksi|login)(\/.*)?$/i, "");
   if (!url.endsWith("/api/serial/ingest")) {
     url += "/api/serial/ingest";
   }
@@ -103,7 +110,7 @@ if (!Array.isArray(queue)) queue = [];
 const bridgeHost = process.env.SERIAL_BRIDGE_HOST || "127.0.0.1";
 const bridgePort = toNumber(process.env.SERIAL_BRIDGE_PORT, 8787);
 const bridgeAdminKey = process.env.SERIAL_BRIDGE_ADMIN_KEY || "bridge-admin-key-ganti-sebelum-produksi";
-let ingestUrl = normalizeIngestUrl(process.env.SERIAL_INGEST_URL || "https://timbangqr-ocr-led-rose.vercel.app/api/serial/ingest");
+let ingestUrl = normalizeIngestUrl(process.env.SERIAL_INGEST_URL || "https://airhitam-177-202-246-42.sslip.io/api/serial/ingest");
 let ingestKey = process.env.SERIAL_API_KEY || "serial-local-key-ganti-sebelum-produksi";
 let deviceId = process.env.SERIAL_DEVICE_ID || "TIMBANG-HJ-SERIAL-01";
 

@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
   <meta charset="utf-8">
-  <title>TimbangQR Bridge — Transdepo Harapan Jaya</title>
+  <title>TimbangQR Bridge — Transdepo Air Hitam & Harapan Jaya</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     :root {
@@ -186,6 +186,7 @@
       display: flex;
       gap: 8px;
       margin-top: 10px;
+      flex-wrap: wrap;
     }
     .alert {
       padding: 10px 14px;
@@ -231,9 +232,9 @@
     <header>
       <div>
         <h1>⚖️ TimbangQR Bridge</h1>
-        <p>Transdepo Harapan Jaya — Integrasi Indikator Timbangan ke Cloud</p>
+        <p>Integrasi Indikator Timbangan (RS232/RS485) ke Server TimbangQR</p>
       </div>
-      <span id="bridgeVersionBadge" class="badge badge-gray">v3.2.7</span>
+      <span id="bridgeVersionBadge" class="badge badge-gray">v3.2.8</span>
     </header>
 
     <!-- LIVE MONITORING PANELS -->
@@ -263,10 +264,10 @@
         </div>
       </article>
 
-      <!-- PANEL 2: CLOUD INGEST (VERCEL) -->
+      <!-- PANEL 2: CLOUD INGEST -->
       <article class="card">
         <div class="card-title">
-          <span>Koneksi Cloud (Vercel)</span>
+          <span>Koneksi Server (Cloud / VPS)</span>
           <span id="ingestBadge" class="badge badge-gray">Memuat…</span>
         </div>
         <div class="meta-row" style="margin-top: 4px;">
@@ -289,7 +290,7 @@
 
         <div style="margin-top: 10px;">
           <button id="testIngestBtn" class="btn btn-secondary btn-sm" style="width: 100%;">
-            ⚡ Tes Koneksi ke Server (Vercel)
+            ⚡ Tes Koneksi ke Server
           </button>
           <div id="testResultBox" class="alert" style="display:none;"></div>
         </div>
@@ -303,9 +304,19 @@
         <span id="apiKeyIndicator" class="badge badge-gray">Kunci belum dicek</span>
       </div>
       <div class="form-group">
-        <label for="url">URL API TimbangQR Ingest</label>
-        <input id="url" type="text" placeholder="https://timbangqr-ocr-led-rose.vercel.app/api/serial/ingest">
-        <div class="help-text">Format otomatis dinormalisasi. Jika format markdown [url](url) dimasukkan, otomatis dibersihkan.</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
+          <label for="url" style="margin-bottom: 0;">URL API TimbangQR Ingest</label>
+          <div style="display: flex; gap: 6px;">
+            <button type="button" id="presetAirHitam" class="btn btn-secondary btn-sm">
+              📍 Air Hitam (VPS)
+            </button>
+            <button type="button" id="presetHarapanJaya" class="btn btn-outline btn-sm">
+              📍 Harapan Jaya
+            </button>
+          </div>
+        </div>
+        <input id="url" type="text" placeholder="https://airhitam-177-202-246-42.sslip.io/api/serial/ingest">
+        <div class="help-text">Bisa memasukkan URL utama atau /scan (otomatis diarahkan ke /api/serial/ingest).</div>
       </div>
       <div class="grid" style="gap: 12px;">
         <div class="form-group">
@@ -315,7 +326,7 @@
         <div class="form-group">
           <label for="serialKey">Serial API Key</label>
           <input id="serialKey" type="text" placeholder="serial-local-key-ganti-sebelum-produksi">
-          <div class="help-text">Otomatis terisi default sesuai server TimbangQR Vercel. Ubah jika ada kunci khusus.</div>
+          <div class="help-text">Otomatis terisi default sesuai server TimbangQR.</div>
         </div>
       </div>
       <div class="btn-group">
@@ -378,9 +389,13 @@
       if (match) url = match[2].trim();
       else url = url.replace(/^[<[(]+|[>\])]+$/g, '').trim();
       url = url.replace(/\/+$/, '');
-      if (url.includes('timbangqr-harapan-jaya.vercel.app')) {
-        url = url.replace('timbangqr-harapan-jaya.vercel.app', 'timbangqr-ocr-led-rose.vercel.app');
+      if (url.startsWith('http://') && (url.includes('.vercel.app') || url.includes('.sslip.io'))) {
+        url = 'https://' + url.slice(7);
       }
+      if (url.includes('timbangqr-airhitam-brown.vercel.app') || url.includes('timbangqr-harapan-jaya.vercel.app')) {
+        url = 'https://airhitam-177-202-246-42.sslip.io/api/serial/ingest';
+      }
+      url = url.replace(/\/(scan|perangkat|dashboard|transaksi|login)(\/.*)?$/i, '');
       if (url && !url.endsWith('/api/serial/ingest')) {
         url += '/api/serial/ingest';
       }
@@ -445,7 +460,7 @@
         if (b.lastIngestStatus === 200) {
           $('ingestBadge').textContent = 'Online (200)';
           $('ingestBadge').className = 'badge badge-green';
-          $('ingestStatusText').textContent = 'Berhasil kirim ke Vercel';
+          $('ingestStatusText').textContent = 'Berhasil kirim ke Server';
         } else if (b.lastIngestStatus === 401) {
           $('ingestBadge').textContent = 'Gagal (401 Auth)';
           $('ingestBadge').className = 'badge badge-red';
@@ -466,7 +481,6 @@
 
         $('ingestAt').textContent = formatTime(b.lastIngestAt);
 
-        // Ingest Error Box
         if (b.lastIngestError) {
           $('ingestErrorBox').style.display = 'flex';
           $('ingestErrorBox').innerHTML = '⚠️ <strong>Masalah Ingest:</strong> ' + b.lastIngestError;
@@ -499,7 +513,7 @@
     async function init() {
       try {
         const c = await window.bridge.getConfig();
-        $('url').value = cleanUrl(c.ingestUrl) || 'https://timbangqr-ocr-led-rose.vercel.app/api/serial/ingest';
+        $('url').value = cleanUrl(c.ingestUrl) || 'https://airhitam-177-202-246-42.sslip.io/api/serial/ingest';
         $('device').value = c.deviceId || 'TIMBANG-HJ-SERIAL-01';
         $('serialKey').value = c.serialApiKey || 'serial-local-key-ganti-sebelum-produksi';
 
@@ -512,6 +526,14 @@
         console.error('Init failed:', err);
       }
     }
+
+    $('presetAirHitam').onclick = () => {
+      $('url').value = 'https://airhitam-177-202-246-42.sslip.io/api/serial/ingest';
+    };
+
+    $('presetHarapanJaya').onclick = () => {
+      $('url').value = 'https://timbangqr-ocr-led-rose.vercel.app/api/serial/ingest';
+    };
 
     $('url').onblur = () => {
       $('url').value = cleanUrl($('url').value);
@@ -560,7 +582,7 @@
         const res = await window.bridge.testIngest();
         if (res.ok) {
           box.className = 'alert alert-success';
-          box.textContent = '✓ BERHASIL: Koneksi ke server cloud (Vercel) normal dan menerima data! (HTTP 200)';
+          box.textContent = '✓ BERHASIL: Koneksi ke server normal dan menerima data! (HTTP 200)';
         } else {
           box.className = 'alert alert-danger';
           if (res.status === 401) {
