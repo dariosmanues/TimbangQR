@@ -136,7 +136,10 @@ export default function WeighingWorkspace({ initialToken = "" }: { initialToken?
 
   useEffect(() => {
     const initial = window.setTimeout(() => void refreshBridge(false), 0);
-    const interval = window.setInterval(() => void refreshBridge(true), 1500);
+    const interval = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      void refreshBridge(true);
+    }, 1000);
     return () => {
       window.clearTimeout(initial);
       window.clearInterval(interval);
