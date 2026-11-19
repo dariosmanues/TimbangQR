@@ -88,7 +88,7 @@ const defaultConfig = {
   stableRegex: process.env.SERIAL_STABLE_REGEX || "(?:\\b(ST|STAB|STABLE)\\b|^ws)",
   unstableRegex: process.env.SERIAL_UNSTABLE_REGEX || "\\b(US|UNST|UNSTABLE)\\b",
   stableSamples: toNumber(process.env.SERIAL_STABLE_SAMPLES, 2),
-  stableToleranceKg: toNumber(process.env.SERIAL_STABLE_TOLERANCE_KG, 10),
+  stableToleranceKg: toNumber(process.env.SERIAL_STABLE_TOLERANCE_KG, 1),
   autoConnect: toBoolean(process.env.SERIAL_AUTO_CONNECT, true),
 };
 
@@ -104,8 +104,8 @@ let config = { ...defaultConfig, ...readJson(configPath, {}) };
 // Migrasi aman untuk instalasi lama yang pernah menyimpan path kosong.
 // Port nonkosong yang sudah dipilih operator tetap dipertahankan.
 if (!String(config.path || "").trim()) config.path = "COM1";
-if (config.stableToleranceKg === undefined || config.stableToleranceKg === 1) {
-  config.stableToleranceKg = 10;
+if (config.stableToleranceKg === undefined) {
+  config.stableToleranceKg = 1;
 }
 if (config.stableSamples === undefined || config.stableSamples > 2) {
   config.stableSamples = 2;
@@ -188,7 +188,7 @@ function calculateStability(raw, weightKg) {
   recentWeights.push(weightKg);
   if (recentWeights.length > maxSamples) recentWeights.shift();
   if (recentWeights.length < maxSamples) return false;
-  const tolerance = Math.max(0, Number(config.stableToleranceKg != null ? config.stableToleranceKg : 10));
+  const tolerance = Math.max(0, Number(config.stableToleranceKg != null ? config.stableToleranceKg : 1));
   return Math.max(...recentWeights) - Math.min(...recentWeights) <= tolerance;
 }
 
