@@ -45,14 +45,22 @@ export async function GET(request: Request) {
   }
 
   const targetCode = device?.device_code || explicitCode || process.env.SERIAL_DEVICE_ID || "TIMBANG-HJ-SERIAL-01";
-  const reading = await dbOne<DeviceReading>(`
-    SELECT r.id, r.device_id, d.device_code, r.weight_kg, r.stable, r.indicator_raw, r.recorded_at
-    FROM device_readings r
-    JOIN weighbridge_devices d ON d.id = r.device_id
-    WHERE d.device_code = $1
-    ORDER BY r.recorded_at DESC, r.id DESC
-    LIMIT 1
-  `, [targetCode]);
+  const reading = device
+    ? await dbOne<DeviceReading>(`
+        SELECT id, device_id, $2::text AS device_code, weight_kg, stable, indicator_raw, recorded_at
+        FROM device_readings
+        WHERE device_id = $1
+        ORDER BY recorded_at DESC, id DESC
+        LIMIT 1
+      `, [device.id, device.device_code])
+    : await dbOne<DeviceReading>(`
+        SELECT r.id, r.device_id, d.device_code, r.weight_kg, r.stable, r.indicator_raw, r.recorded_at
+        FROM device_readings r
+        JOIN weighbridge_devices d ON d.id = r.device_id
+        WHERE d.device_code = $1
+        ORDER BY r.recorded_at DESC, r.id DESC
+        LIMIT 1
+      `, [targetCode]);
 
   const deviceSeenMs = device?.last_seen_at ? Date.parse(String(device.last_seen_at)) : 0;
   const readingSeenMs = reading?.recorded_at ? Date.parse(String(reading.recorded_at)) : 0;

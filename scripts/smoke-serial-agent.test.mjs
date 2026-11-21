@@ -38,7 +38,7 @@ async function eventually(check, description) {
   throw new Error(`Timed out: ${description}`, { cause: lastError });
 }
 
-async function fixture(t, { queue = [], status = 200 } = {}) {
+async function fixture(t, { queue = [], status = 200, ingestDelayMs = 0, enableSimulate = false } = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "timbangqr-smoke-"));
   const queuePath = path.join(directory, "serial-bridge-queue.json");
   await fs.writeFile(queuePath, JSON.stringify(queue));
@@ -47,6 +47,7 @@ async function fixture(t, { queue = [], status = 200 } = {}) {
   const ingest = http.createServer(async (req, res) => {
     let raw = "";
     for await (const chunk of req) raw += chunk;
+    if (ingestDelayMs > 0) await delay(ingestDelayMs);
     calls.push({ url: req.url, key: req.headers["x-serial-key"], body: JSON.parse(raw), status: responseStatus });
     res.writeHead(responseStatus, { "content-type": "application/json" });
     res.end(JSON.stringify(responseStatus === 200 ? { ok: true } : { error: "Simulated ingest failure" }));
@@ -94,6 +95,7 @@ async function fixture(t, { queue = [], status = 200 } = {}) {
         SERIAL_DEVICE_ID: "SMOKE-DEVICE",
         SERIAL_AUTO_CONNECT: "false",
         SERIAL_PORT: "SMOKE-NO-HARDWARE",
+        ...(enableSimulate ? { SERIAL_ENABLE_SIMULATE: "1" } : {}),
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -197,4 +199,44 @@ test("explicit queue clear removes retained readings across agent restart", asyn
   await agent.stop();
   await agent.start();
   assert.equal((await agent.request("/health")).body.bridge.queueLength, 0);
+});
+
+test("burst frames coalesce without backlog, preserve 1 kg stability tolerance, and skip queuing on HTTP 403", async (t) => {
+  const agent = await fixture(t, { status: 200, ingestDelayMs: 220, enableSimulate: true });
+  const started = Date.now();
+  // 30 rapid bouncing frames while truck settles + final 2 identical frames (tolerance 1 kg)
+  const frames = [];
+  for (let i = 1; i <= 28; i++) {
+    frames.push(`wn${String(i * 90).padStart(7, "0")}kg\r\n`);
+  }
+  frames.push("wn0002550kg\r\n");
+  frames.push("wn0002552kg\r\n"); // diff 2 kg -> must NOT be stable under 1 kg tolerance
+  const mid = await agent.request("/simulate-chunk", { body: { raw: frames.join("") } });
+  assert.equal(mid.status, 200);
+  assert.equal(mid.body.status.latest.weight_kg, 2552);
+  assert.equal(mid.body.status.latest.stable, false, "Diff of 2 kg must stay unstable with 1 kg tolerance");
+
+  const finalRes = await agent.request("/simulate-chunk", { body: { raw: "wn0002550kg\r\nwn0002550kg\r\n" } });
+  assert.equal(finalRes.status, 200);
+  assert.equal(finalRes.body.status.latest.weight_kg, 2550);
+  assert.equal(finalRes.body.status.latest.stable, true, "Identical consecutive frames must lock stable immediately");
+
+  await eventually(async () => {
+    const last = agent.calls[agent.calls.length - 1];
+    assert.ok(last, "at least one ingest call");
+    assert.equal(last.body.weight_kg, 2550);
+    assert.equal(last.body.stable, true);
+  }, "final stable weight arrives quickly");
+
+  const elapsed = Date.now() - started;
+  assert.ok(agent.calls.length <= 5, `Expected coalesced calls <= 5, got ${agent.calls.length}`);
+  assert.ok(elapsed < 2000, `Expected < 2000ms without backlog, took ${elapsed}ms`);
+
+  // Verify HTTP 403 (Super Admin disabled bridge) does not pile up offline queue
+  agent.setStatus(403);
+  await agent.request("/simulate-chunk", { body: { raw: "wn0002600kg\r\nwn0002600kg\r\n" } });
+  await eventually(async () => {
+    assert.equal((await agent.request("/health")).body.bridge.lastIngestStatus, 403);
+  }, "HTTP 403 observed");
+  assert.deepEqual(await agent.queue(), [], "HTTP 403 must not accumulate stale offline queue");
 });

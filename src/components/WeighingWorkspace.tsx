@@ -80,6 +80,7 @@ export default function WeighingWorkspace({ initialToken = "" }: { initialToken?
   const [loadingBridge, setLoadingBridge] = useState(false);
   const [activeSource, setActiveSource] = useState<"SERIAL_BRIDGE" | "OCR_LED">("SERIAL_BRIDGE");
   const lastAppliedReadingIdRef = useRef<number | null>(null);
+  const bridgeInFlightRef = useRef(false);
 
   const [lpsId, setLpsId] = useState("");
   const [driverName, setDriverName] = useState("");
@@ -92,6 +93,8 @@ export default function WeighingWorkspace({ initialToken = "" }: { initialToken?
   const [result, setResult] = useState<{ ticketNumber: string; netto2Kg: number } | null>(null);
 
   const refreshBridge = useCallback(async (silent = false) => {
+    if (silent && bridgeInFlightRef.current) return;
+    bridgeInFlightRef.current = true;
     if (!silent) setLoadingBridge(true);
     try {
       const response = await fetch("/api/serial/latest", { cache: "no-store" });
@@ -130,6 +133,7 @@ export default function WeighingWorkspace({ initialToken = "" }: { initialToken?
     } catch {
       // Ignore transient polling error
     } finally {
+      bridgeInFlightRef.current = false;
       if (!silent) setLoadingBridge(false);
     }
   }, []);
@@ -139,10 +143,17 @@ export default function WeighingWorkspace({ initialToken = "" }: { initialToken?
     const interval = window.setInterval(() => {
       if (typeof document !== "undefined" && document.hidden) return;
       void refreshBridge(true);
-    }, 1000);
+    }, 500);
+    const onVisible = () => {
+      if (typeof document !== "undefined" && !document.hidden) {
+        void refreshBridge(true);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.clearTimeout(initial);
       window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [refreshBridge]);
 

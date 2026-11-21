@@ -137,8 +137,16 @@ let lastDisconnectedAt = null;
 let recentWeights = [];
 let lastForwarded = null;
 let lastForwardedAt = 0;
+let pendingPayload = null;
+let pendingUrgent = false;
+let delivering = false;
+let deliveryTimer = null;
 let flushing = false;
 const startedAt = new Date().toISOString();
+const LIVE_MIN_INTERVAL_MS = Math.max(50, toNumber(process.env.SERIAL_SEND_INTERVAL_MS, 150));
+const debugSerialLogs = toBoolean(process.env.SERIAL_DEBUG, false);
+const httpAgent = new http.Agent({ keepAlive: true, keepAliveMsecs: 15_000, maxSockets: 2 });
+const httpsAgent = new https.Agent({ keepAlive: true, keepAliveMsecs: 15_000, maxSockets: 2 });
 
 function persistConfig() {
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
@@ -206,10 +214,11 @@ function parseFrame(rawInput) {
 }
 
 class DeliveryError extends Error {
-  constructor(message, retryable) {
+  constructor(message, retryable, status = null) {
     super(message);
     this.name = "DeliveryError";
     this.retryable = retryable;
+    this.status = status;
   }
 }
 
@@ -221,14 +230,17 @@ async function executePostJson(targetUrl, headers, data, timeoutMs = 5000, maxRe
     function doRequest(urlStr) {
       try {
         const parsed = new URL(urlStr);
-        const client = parsed.protocol === "https:" ? https : http;
+        const isHttps = parsed.protocol === "https:";
+        const client = isHttps ? https : http;
         const bodyStr = JSON.stringify(data);
         const req = client.request(parsed, {
           method: "POST",
+          agent: isHttps ? httpsAgent : httpAgent,
           headers: {
             ...headers,
             "content-type": "application/json",
             "content-length": Buffer.byteLength(bodyStr),
+            connection: "keep-alive",
           },
           timeout: timeoutMs,
         }, (res) => {
@@ -304,13 +316,15 @@ async function sendReading(payload) {
     } catch {}
     lastIngestError = `Server aplikasi HTTP ${response.status}: ${detail}`;
     const retryable = response.status >= 500 || response.status === 408 || response.status === 429;
-    throw new DeliveryError(lastIngestError, retryable);
+    throw new DeliveryError(lastIngestError, retryable, response.status);
   }
 
   lastIngestStatus = 200;
   lastIngestError = "";
   lastIngestAt = new Date().toISOString();
-  console.log(`[Serial Bridge] Ingest berhasil: ${payload.weight_kg} kg | ${payload.stable ? "STABIL" : "TIDAK STABIL"}.`);
+  if (debugSerialLogs) {
+    console.log(`[Serial Bridge] Ingest berhasil: ${payload.weight_kg} kg | ${payload.stable ? "STABIL" : "TIDAK STABIL"}.`);
+  }
 }
 
 const MAX_QUEUE_ITEMS = 5000;
@@ -359,7 +373,75 @@ async function flushQueue() {
   }
 }
 
-async function handleFrame(frame) {
+function scheduleDelivery() {
+  if (shuttingDown || delivering || !pendingPayload) return;
+  if (deliveryTimer) {
+    if (!pendingUrgent) return;
+    clearTimeout(deliveryTimer);
+    deliveryTimer = null;
+  }
+  const elapsed = lastForwardedAt > 0 ? Date.now() - lastForwardedAt : LIVE_MIN_INTERVAL_MS;
+  const waitMs = pendingUrgent ? 0 : Math.max(0, LIVE_MIN_INTERVAL_MS - elapsed);
+  if (waitMs === 0) {
+    void drainPending();
+  } else {
+    deliveryTimer = setTimeout(() => {
+      deliveryTimer = null;
+      void drainPending();
+    }, waitMs);
+    deliveryTimer.unref?.();
+  }
+}
+
+async function drainPending() {
+  if (shuttingDown || delivering) return;
+  delivering = true;
+  try {
+    while (!shuttingDown && pendingPayload) {
+      const payload = pendingPayload;
+      const urgent = pendingUrgent;
+      pendingPayload = null;
+      pendingUrgent = false;
+
+      const nowMs = Date.now();
+      const unchanged = lastForwarded
+        && lastForwarded.weight_kg === payload.weight_kg
+        && lastForwarded.stable === payload.stable
+        && lastForwarded.indicator_raw === payload.indicator_raw;
+      if (unchanged && nowMs - lastForwardedAt < 30_000) {
+        continue;
+      }
+
+      const elapsed = lastForwardedAt > 0 ? nowMs - lastForwardedAt : LIVE_MIN_INTERVAL_MS;
+      if (!urgent && elapsed < LIVE_MIN_INTERVAL_MS) {
+        await new Promise((resolve) => setTimeout(resolve, LIVE_MIN_INTERVAL_MS - elapsed));
+        if (pendingPayload) {
+          continue;
+        }
+      }
+
+      lastForwarded = payload;
+      lastForwardedAt = Date.now();
+      try {
+        await sendReading(payload);
+        if (queue.length > 0) void flushQueue();
+      } catch (error) {
+        // HTTP 403 = Bridge dinonaktifkan Super Admin di server; jangan menimbun antrean basi
+        if (error instanceof DeliveryError && error.status === 403) {
+          continue;
+        }
+        // Simpan ke antrean offline jika pengiriman gagal (termasuk HTTP 401/503/network)
+        // agar data pembacaan fisik timbangan di lapangan tidak hilang
+        enqueue(payload);
+      }
+    }
+  } finally {
+    delivering = false;
+    if (pendingPayload && !shuttingDown) scheduleDelivery();
+  }
+}
+
+function handleFrame(frame) {
   const parsed = parseFrame(frame);
   if (!parsed.ok) {
     latest = {
@@ -380,6 +462,7 @@ async function handleFrame(frame) {
     interface_type: config.interfaceType,
   };
 
+  // Perbarui pembacaan terbaru SECARA INSTAN (tanpa menunggu HTTP ke server)
   latest = {
     ...payload,
     receivedAt: payload.timestamp,
@@ -391,37 +474,23 @@ async function handleFrame(frame) {
     && lastForwarded.weight_kg === payload.weight_kg
     && lastForwarded.stable === payload.stable
     && lastForwarded.indicator_raw === payload.indicator_raw;
-  const minimumInterval = unchanged ? 30_000 : 250;
-  if (nowMs - lastForwardedAt < minimumInterval) {
+  if (unchanged && nowMs - lastForwardedAt < 30_000 && !pendingPayload) {
     return { ok: true, skippedDuplicate: true, ...payload };
   }
-  lastForwarded = payload;
-  lastForwardedAt = nowMs;
 
-  try {
-    await sendReading(payload);
-    await flushQueue();
-  } catch (error) {
-    // Simpan ke antrean offline jika pengiriman gagal (termasuk HTTP 401 saat kredensial salah)
-    // agar data pembacaan fisik timbangan di lapangan tidak hilang
-    enqueue(payload);
-  }
+  // Latest-wins: ganti payload tertunda dengan nilai terbaru agar tidak pernah menumpuk antrean basi
+  const becameStable = payload.stable && !lastForwarded?.stable;
+  pendingPayload = payload;
+  if (becameStable) pendingUrgent = true;
+  scheduleDelivery();
   return { ok: true, ...payload };
-}
-
-let frameChain = Promise.resolve();
-
-function scheduleFrame(frame) {
-  frameChain = frameChain
-    .then(() => processFrame(frame))
-    .catch((error) => {
-      console.error(`[Serial Bridge] Error frame pipeline: ${error?.message || error}`);
-    });
 }
 
 function consumeChunk(chunk) {
   const received = chunk.toString("utf8");
-  console.log(`[Serial Bridge] RX: ${JSON.stringify(received)}`);
+  if (debugSerialLogs) {
+    console.log(`[Serial Bridge] RX: ${JSON.stringify(received)}`);
+  }
 
   // Be tolerant during integration testing: a real indicator sends CR/LF bytes,
   // while some simulators may send the visible characters "\\r\\n" instead.
@@ -433,7 +502,7 @@ function consumeChunk(chunk) {
     idleTimer = setTimeout(() => {
       const frame = inputBuffer;
       inputBuffer = "";
-      scheduleFrame(frame);
+      processFrame(frame);
     }, Math.max(30, Number(config.idleTimeoutMs || 120)));
     return;
   }
@@ -444,15 +513,17 @@ function consumeChunk(chunk) {
   while ((position = inputBuffer.indexOf(delimiter)) >= 0) {
     const frame = inputBuffer.slice(0, position);
     inputBuffer = inputBuffer.slice(position + delimiter.length);
-    if (frame.trim()) scheduleFrame(frame);
+    if (frame.trim()) processFrame(frame);
   }
 }
 
-async function processFrame(frame) {
-  console.log(`[Serial Bridge] Frame: ${JSON.stringify(frame)}`);
+function processFrame(frame) {
+  if (debugSerialLogs) {
+    console.log(`[Serial Bridge] Frame: ${JSON.stringify(frame)}`);
+  }
   try {
-    const result = await handleFrame(frame);
-    if (!result.ok) {
+    const result = handleFrame(frame);
+    if (!result.ok && debugSerialLogs) {
       console.warn(`[Serial Bridge] Frame ditolak: ${result.error}`);
     }
   } catch (error) {
@@ -482,6 +553,13 @@ async function disconnectSerial({ keepAutoConnect = false } = {}) {
     clearTimeout(idleTimer);
     idleTimer = null;
   }
+  if (deliveryTimer) {
+    clearTimeout(deliveryTimer);
+    deliveryTimer = null;
+  }
+  pendingPayload = null;
+  pendingUrgent = false;
+  recentWeights = [];
   inputBuffer = "";
   const current = serialPort;
   serialPort = null;
@@ -567,6 +645,8 @@ function statusPayload() {
       lastIngestStatus,
       lastIngestAt,
       queueLength: queue.length,
+      delivering,
+      hasPending: Boolean(pendingPayload),
       ingestUrl,
       deviceId,
       hasApiKey: Boolean(ingestKey && ingestKey !== "serial-local-key-ganti-sebelum-produksi"),
@@ -633,8 +713,8 @@ const server = http.createServer(async (request, response) => {
       next.parity = ["none", "even", "odd", "mark", "space"].includes(next.parity) ? next.parity : "none";
       next.frameMode = ["line", "idle"].includes(next.frameMode) ? next.frameMode : "line";
       next.interfaceType = ["RS232", "RS485"].includes(next.interfaceType) ? next.interfaceType : "RS232";
-      next.stableSamples = Math.max(2, Math.min(20, Number(next.stableSamples || 3)));
-      next.stableToleranceKg = Math.max(0, Number(next.stableToleranceKg || 0));
+      next.stableSamples = Math.max(2, Math.min(20, Number(next.stableSamples || 2)));
+      next.stableToleranceKg = Math.max(0, Number(next.stableToleranceKg != null ? next.stableToleranceKg : 1));
       next.idleTimeoutMs = Math.max(30, Number(next.idleTimeoutMs || 120));
       next.weightMultiplier = Number(next.weightMultiplier || 1);
       if (!safeRegex(next.weightRegex)) throw new Error("Weight regex tidak valid.");
@@ -661,6 +741,11 @@ const server = http.createServer(async (request, response) => {
       const body = await readBody(request);
       const parsed = parseFrame(String(body.raw || ""));
       return sendJson(response, parsed.ok ? 200 : 422, { result: parsed, status: statusPayload() });
+    }
+    if (request.method === "POST" && url.pathname === "/simulate-chunk" && process.env.SERIAL_ENABLE_SIMULATE === "1") {
+      const body = await readBody(request);
+      consumeChunk(Buffer.from(String(body.raw || ""), "utf8"));
+      return sendJson(response, 200, { ok: true, status: statusPayload() });
     }
     if (request.method === "POST" && url.pathname === "/queue/clear") {
       queue = [];
@@ -736,6 +821,8 @@ setInterval(() => {
 async function shutdown() {
   shuttingDown = true;
   await disconnectSerial({ keepAutoConnect: true });
+  httpAgent.destroy();
+  httpsAgent.destroy();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1000).unref();
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Cloud, RefreshCw, Usb } from "lucide-react";
 
 type RemoteReading = {
@@ -42,8 +42,11 @@ export default function RemoteSerialStatusPanel() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [now, setNow] = useState(0);
+  const inFlightRef = useRef(false);
 
   const refresh = useCallback(async (silent = false) => {
+    if (silent && inFlightRef.current) return;
+    inFlightRef.current = true;
     if (!silent) setLoading(true);
     try {
       const response = await fetch("/api/serial/latest", { cache: "no-store" });
@@ -57,6 +60,7 @@ export default function RemoteSerialStatusPanel() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Gagal membaca data timbangan dari Vercel.");
     } finally {
+      inFlightRef.current = false;
       if (!silent) setLoading(false);
     }
   }, []);
@@ -66,7 +70,10 @@ export default function RemoteSerialStatusPanel() {
       setNow(Date.now());
       void refresh();
     }, 0);
-    const timer = window.setInterval(() => void refresh(true), 2000);
+    const timer = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      void refresh(true);
+    }, 800);
     const clock = window.setInterval(() => setNow(Date.now()), 5000);
     return () => {
       window.clearTimeout(initial);

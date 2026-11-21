@@ -407,10 +407,19 @@
       return url;
     }
 
+    let showingStatus = false;
+    let statusRenderedOnce = false;
+
     async function show() {
+      if (showingStatus) return;
+      showingStatus = true;
       try {
         const s = await window.bridge.status();
-        $('status').textContent = JSON.stringify(s, null, 2);
+        const detailsEl = $('status').closest('details');
+        if (!statusRenderedOnce || (detailsEl && detailsEl.open)) {
+          $('status').textContent = JSON.stringify(s, null, 2);
+          statusRenderedOnce = true;
+        }
 
         if (!s || !s.ok) {
           $('serialBadge').textContent = 'Agent Off';
@@ -470,6 +479,10 @@
           $('ingestBadge').textContent = 'Gagal (401 Auth)';
           $('ingestBadge').className = 'badge badge-red';
           $('ingestStatusText').textContent = 'API Key Salah / Tidak Valid';
+        } else if (b.lastIngestStatus === 403) {
+          $('ingestBadge').textContent = 'Non-Aktif (403)';
+          $('ingestBadge').className = 'badge badge-yellow';
+          $('ingestStatusText').textContent = 'Dinonaktifkan Super Admin di Web';
         } else if (b.lastIngestStatus === 'network_error') {
           $('ingestBadge').textContent = 'Offline';
           $('ingestBadge').className = 'badge badge-red';
@@ -495,6 +508,8 @@
 
       } catch (err) {
         $('status').textContent = 'Gagal memuat status: ' + err.message;
+      } finally {
+        showingStatus = false;
       }
     }
 
@@ -667,7 +682,7 @@
     };
 
     init();
-    setInterval(show, 500);
+    setInterval(show, 250);
   </script>
 </body>
 </html>

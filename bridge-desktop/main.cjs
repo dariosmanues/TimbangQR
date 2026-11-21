@@ -17,6 +17,7 @@ let agentLogPath = "";
 let agentStartError = "";
 let operatorConfig = {};
 const bridgeUrl = "http://127.0.0.1:8787";
+const localAgent = new http.Agent({ keepAlive: true, keepAliveMsecs: 15_000, maxSockets: 2 });
 const defaultIngestUrl = "https://airhitam-177-202-246-42.sslip.io/api/serial/ingest";
 const defaultDeviceId = "TIMBANG-HJ-SERIAL-01";
 const defaultSerialApiKey = "serial-local-key-ganti-sebelum-produksi";
@@ -120,6 +121,7 @@ function request(pathname, options = {}) {
       const reqTimeout = Number(options.timeout || 10000);
       const req = http.request(url, {
         method,
+        agent: localAgent,
         headers,
         timeout: reqTimeout,
       }, (res) => {
@@ -222,6 +224,11 @@ async function startAgent() {
   const dataDir = path.join(app.getPath("userData"), "agent-data");
   fs.mkdirSync(dataDir, { recursive: true });
   agentLogPath = path.join(dataDir, "bridge-agent.log");
+  try {
+    if (fs.existsSync(agentLogPath) && fs.statSync(agentLogPath).size > 2 * 1024 * 1024) {
+      fs.truncateSync(agentLogPath, 0);
+    }
+  } catch {}
   const agentScript = path.join(app.getAppPath(), "serial-agent", "server.mjs");
   const logFile = fs.openSync(agentLogPath, "a");
   try {
